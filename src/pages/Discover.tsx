@@ -5,19 +5,21 @@ import {
   RefreshCw, Shield, DollarSign,
   ArrowRight, Activity, Search
 } from 'lucide-react';
-import { mockFindings, type Finding } from '../data/mockData';
+import { useDemo } from '../context/useDemo';
+import { type Finding } from '../data/mockData';
 import FindingDetailDrawer from '../components/FindingDetailDrawer';
 import { sound } from '../utils/soundEngine';
 
 export default function Discover() {
   const navigate = useNavigate();
+  const { findings, setSelectedFindingId, activeScenario } = useDemo();
   const [filter, setFilter] = useState<'all' | 'security' | 'cost'>('all');
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
   const displayedFindings = filter === 'all'
-    ? mockFindings
-    : mockFindings.filter((f) => f.category === filter);
+    ? findings
+    : findings.filter((f) => f.category === filter);
 
   const handleRunScan = () => {
     sound.playClick();
@@ -30,11 +32,13 @@ export default function Discover() {
 
   const handleOpenFinding = (f: Finding) => {
     sound.playClick();
+    setSelectedFindingId(f.id);
     setSelectedFinding(f);
   };
 
-  const handleViewPassport = (_f: Finding) => {
+  const handleViewPassport = (f: Finding) => {
     sound.playClick();
+    setSelectedFindingId(f.id);
     setSelectedFinding(null);
     navigate('/passport');
   };
@@ -46,13 +50,13 @@ export default function Discover() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span className="badge badge-info">STAGE 2 OF 5</span>
-            <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Telemetry Radar</span>
+            <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Telemetry Radar • {activeScenario === 'student' ? 'us-east-1' : 'ap-south-1'}</span>
           </div>
           <h1 className="display-title" style={{ marginBottom: 6 }}>
             Resource Discovery & Evidence
           </h1>
           <p className="body-lead">
-            {mockFindings.length} findings verified across 47 active AWS resources in ap-south-1.
+            {findings.length} findings verified across active AWS resources ({activeScenario === 'student' ? 'Student ML Sandbox' : 'FinTech MVP'}).
           </p>
         </div>
 
@@ -93,8 +97,8 @@ export default function Discover() {
         {(['all', 'security', 'cost'] as const).map((tab) => {
           const isActive = filter === tab;
           const count = tab === 'all'
-            ? mockFindings.length
-            : mockFindings.filter((x) => x.category === tab).length;
+            ? findings.length
+            : findings.filter((x) => x.category === tab).length;
 
           return (
             <button
@@ -131,21 +135,30 @@ export default function Discover() {
         {displayedFindings.map((finding) => {
           const isCritical = finding.severity === 'critical';
           const isHigh = finding.severity === 'high';
+          const isResolved = finding.status === 'resolved';
 
           return (
             <motion.div
               key={finding.id}
               className="apple-card interactive"
               onClick={() => handleOpenFinding(finding)}
-              style={{ cursor: 'pointer' }}
+              style={{
+                cursor: 'pointer',
+                borderColor: isResolved ? 'rgba(48, 209, 88, 0.4)' : 'var(--border-subtle)',
+                background: isResolved ? '#FAFDFB' : '#FFFFFF'
+              }}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.995 }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${isCritical ? 'badge-critical' : isHigh ? 'badge-high' : 'badge-neutral'}`}>
-                    {finding.severity.toUpperCase()}
-                  </span>
+                  {isResolved ? (
+                    <span className="badge badge-success">RESOLVED ✓</span>
+                  ) : (
+                    <span className={`badge ${isCritical ? 'badge-critical' : isHigh ? 'badge-high' : 'badge-neutral'}`}>
+                      {finding.severity.toUpperCase()}
+                    </span>
+                  )}
                   <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
                     {finding.rule.split(':')[0]}
                   </span>
@@ -162,7 +175,7 @@ export default function Discover() {
                 )}
               </div>
 
-              <h2 style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 6 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 6, color: isResolved ? 'var(--apple-emerald-dark)' : 'var(--text-primary)' }}>
                 {finding.title}
               </h2>
               <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 16 }}>
@@ -190,9 +203,9 @@ export default function Discover() {
                   Resource: {finding.resource.id} ({finding.resource.name})
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--apple-blue)', fontWeight: 600, fontSize: 13 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: isResolved ? 'var(--apple-emerald-dark)' : 'var(--apple-blue)', fontWeight: 600, fontSize: 13 }}>
                   <Activity size={14} />
-                  <span>Inspect Evidence & Passport</span>
+                  <span>{isResolved ? 'Inspect Audit Proof' : 'Inspect Evidence & Passport'}</span>
                   <ArrowRight size={14} />
                 </div>
               </div>

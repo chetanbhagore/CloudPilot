@@ -3,19 +3,22 @@ import {
   LayoutDashboard, Search, ShieldCheck, CheckSquare,
   BookOpen, Cloud, Zap
 } from 'lucide-react';
-import { mockAccount } from '../data/mockData';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
 
-const navItems = [
-  { to: '/',          icon: LayoutDashboard, label: 'Overview',        badge: null },
-  { to: '/connect',   icon: Cloud,           label: 'Connect Account', badge: null },
-  { to: '/discover',  icon: Search,          label: 'Discover',        badge: '5' },
-  { to: '/passport',  icon: ShieldCheck,     label: 'Safety Passport', badge: '1' },
-  { to: '/approve',   icon: CheckSquare,     label: 'Approve & Act',   badge: 'Action', badgeWarn: true },
-  { to: '/audit',     icon: BookOpen,        label: 'Audit Trail',     badge: null },
-];
-
 export default function Sidebar() {
+  const { activeScenario, findings, isRemediated } = useDemo();
+  const isStudent = activeScenario === 'student';
+
+  const navItems = [
+    { to: '/',          icon: LayoutDashboard, label: 'Overview',        badge: null, badgeWarn: false },
+    { to: '/connect',   icon: Cloud,           label: 'Connect Account', badge: null, badgeWarn: false },
+    { to: '/discover',  icon: Search,          label: 'Discover',        badge: String(findings.length), badgeWarn: false },
+    { to: '/passport',  icon: ShieldCheck,     label: 'Safety Passport', badge: '1', badgeWarn: false },
+    { to: '/approve',   icon: CheckSquare,     label: 'Approve & Act',   badge: isRemediated ? 'Done ✓' : 'Action', badgeWarn: !isRemediated },
+    { to: '/audit',     icon: BookOpen,        label: 'Audit Trail',     badge: isRemediated ? '1 Record' : null, badgeWarn: false },
+  ];
+
   return (
     <nav className="layout-sidebar">
       {/* Brand */}
@@ -60,14 +63,14 @@ export default function Sidebar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <div className="account-dot" />
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            {mockAccount.alias}
+            {isStudent ? 'Student ML Research' : 'FinTech MVP Dev'}
           </div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-          {mockAccount.accountId} • {mockAccount.region}
+          {isStudent ? 'acct-987654321098 • us-east-1' : 'acct-123456789012 • ap-south-1'}
         </div>
         <div style={{ fontSize: 11, color: 'var(--apple-emerald-dark)', marginTop: 6, fontWeight: 500 }}>
-          ✓ Read-Only IAM Session
+          ✓ Two-Role IAM Model Active
         </div>
       </div>
     </nav>

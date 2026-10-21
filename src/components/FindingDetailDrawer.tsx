@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ArrowRight, DollarSign,
@@ -13,18 +14,31 @@ interface DrawerProps {
   onViewPassport: (finding: Finding) => void;
 }
 
-// Simulated CloudWatch telemetry data for the finding
 const TELEMETRY_DATA = [
-  { time: '00:00', ingressHits: 142, cpu: 1.2 },
-  { time: '04:00', ingressHits: 98, cpu: 0.9 },
-  { time: '08:00', ingressHits: 284, cpu: 2.1 },
-  { time: '12:00', ingressHits: 412, cpu: 3.4 },
-  { time: '16:00', ingressHits: 360, cpu: 2.8 },
-  { time: '20:00', ingressHits: 210, cpu: 1.6 },
-  { time: '23:59', ingressHits: 175, cpu: 1.1 },
+  { time: '00:00', ingressHits: 142, metricVal: 1.2 },
+  { time: '04:00', ingressHits: 98, metricVal: 0.9 },
+  { time: '08:00', ingressHits: 284, metricVal: 2.1 },
+  { time: '12:00', ingressHits: 412, metricVal: 3.4 },
+  { time: '16:00', ingressHits: 360, metricVal: 2.8 },
+  { time: '20:00', ingressHits: 210, metricVal: 1.6 },
+  { time: '23:59', ingressHits: 175, metricVal: 1.1 },
 ];
 
 export default function FindingDetailDrawer({ finding, onClose, onViewPassport }: DrawerProps) {
+  // Listen for Escape key to close drawer smoothly
+  useEffect(() => {
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        sound.playClick();
+        onClose();
+      }
+    };
+    if (finding) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [finding, onClose]);
+
   if (!finding) return null;
 
   const isCost = finding.category === 'cost';
@@ -34,6 +48,9 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
       <div className="drawer-backdrop" onClick={onClose}>
         <motion.div
           className="drawer-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label={finding.title}
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
@@ -70,6 +87,7 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
               }}
               className="btn btn-ghost btn-sm"
               style={{ width: 32, height: 32, padding: 0, borderRadius: '50%' }}
+              aria-label="Close drawer"
             >
               <X size={16} />
             </button>
@@ -117,7 +135,7 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                 <div style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Activity size={14} color="var(--apple-blue)" /> CloudWatch Telemetry
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Last 24 Hours</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Last 24 Hours (Press Esc to close)</span>
               </div>
 
               <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 12px 8px' }}>
@@ -143,8 +161,8 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                       />
                       <Area
                         type="monotone"
-                        dataKey={isCost ? 'cpu' : 'ingressHits'}
-                        name={isCost ? 'CPU Utilization %' : 'Inbound SSH Probes'}
+                        dataKey={isCost ? 'metricVal' : 'ingressHits'}
+                        name={isCost ? 'Resource Metric Utilization %' : 'Inbound Connection Attempts'}
                         stroke={isCost ? '#0071E3' : '#FF3B30'}
                         strokeWidth={2}
                         fill="url(#telemetryGradient)"
@@ -154,8 +172,8 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 8 }}>
                   {isCost
-                    ? 'Average CPU has remained under 2.5% for 23 consecutive days'
-                    : '1,679 unauthorized IP scan attempts registered on port 22 in past 24h'}
+                    ? 'Average activity metric has remained under 2.5% for consecutive days'
+                    : '1,679 automated external probe attempts registered on target port'}
                 </div>
               </div>
             </div>
@@ -185,7 +203,7 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                   ~${finding.estimatedSavings.toFixed(2)} / month
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  *Financial estimate based on published ap-south-1 on-demand pricing. Not claimed as actual realized savings until billing cycle closes.
+                  *Financial estimate based on published AWS on-demand pricing. Not claimed as actual realized savings until billing cycle closes.
                 </div>
               </div>
             )}

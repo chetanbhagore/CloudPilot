@@ -6,46 +6,68 @@ import {
   Terminal, ArrowRight, Lock, Sparkles
 } from 'lucide-react';
 import SlideToApprove from '../components/SlideToApprove';
-import { mockSafetyPassportApproved } from '../data/mockData';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
 
 type Phase = 'review' | 'executing' | 'verified';
 
-const TERMINAL_LOGS = [
-  '[0.10s] Initializing verified execution runner...',
-  '[0.35s] Assuming role arn:aws:iam::123456789012:role/CloudPilotReadRole via STS...',
-  '[0.68s] Checking pre-flight preconditions: Target sg-0a1b2c3d4e5f presence confirmed.',
-  '[1.15s] Executing atomic call: ec2:RevokeSecurityGroupIngress (IpProtocol: tcp, FromPort: 22, CidrIp: 0.0.0.0/0)...',
-  '[1.82s] AWS Response 200 OK. AWS RequestId: a1b2c3d4-5678-90ab-cdef-1234567890ab',
-  '[2.30s] Running independent verification query: ec2:DescribeSecurityGroups...',
-  '[2.75s] Rule 0.0.0.0/0:22 successfully revoked. Inbound rules 80 and 443 remain unaffected.',
-  '[3.15s] Ephemeral rollback checkpoint preserved in audit ledger.',
-  '[3.40s] Verification complete. Security Health Score recalculated: 72% (+38 pts).'
-];
-
 export default function Approve() {
   const navigate = useNavigate();
+  const {
+    getActiveFinding,
+    activeScenario,
+    isRemediated,
+    approveRemediation
+  } = useDemo();
+
+  const currentFinding = getActiveFinding();
+  const isStudent = activeScenario === 'student';
+
   const [phase, setPhase] = useState<Phase>('review');
   const [confirmedFriction, setConfirmedFriction] = useState(false);
   const [logIndex, setLogIndex] = useState(0);
+
+  const effectivePhase: Phase = isRemediated ? 'verified' : phase;
+
+  const terminalLogs = isStudent ? [
+    '[0.10s] Initializing verified execution runner...',
+    '[0.35s] Assuming role arn:aws:iam::987654321098:role/CloudPilotRemediationRole via STS...',
+    `[0.68s] Checking pre-flight preconditions: Target instance ${currentFinding.resource.id} presence confirmed in us-east-1.`,
+    `[1.15s] Executing atomic call: ec2:StopInstances (InstanceIds: ["${currentFinding.resource.id}"], Hibernate: false)...`,
+    '[1.82s] AWS Response 200 OK. AWS RequestId: req-aws-7f89a-student-cs682',
+    '[2.30s] Running independent verification query: ec2:DescribeInstances...',
+    `[2.75s] Instance state transitioned: running -> STOPPED. Attached EBS storage retained.`,
+    '[3.15s] Hourly run-rate reduced from $3.06/hr to $0.00/hr ($2,203/mo projected leak halted).',
+    '[3.40s] Verification complete. Security Health Score recalculated: 88% (+46 pts).'
+  ] : [
+    '[0.10s] Initializing verified execution runner...',
+    '[0.35s] Assuming role arn:aws:iam::123456789012:role/CloudPilotRemediationRole via STS...',
+    `[0.68s] Checking pre-flight preconditions: Target ${currentFinding.resource.id} presence confirmed in ap-south-1.`,
+    `[1.15s] Executing atomic call: ec2:RevokeSecurityGroupIngress (IpProtocol: tcp, FromPort: 22, CidrIp: 0.0.0.0/0)...`,
+    '[1.82s] AWS Response 200 OK. AWS RequestId: req-aws-9042b-fintech-mumbai',
+    '[2.30s] Running independent verification query: ec2:DescribeSecurityGroups...',
+    '[2.75s] Rule 0.0.0.0/0:22 successfully revoked. Inbound rules 80 and 443 remain unaffected.',
+    '[3.15s] Ephemeral rollback checkpoint preserved in audit ledger.',
+    '[3.40s] Verification complete. Security Health Score recalculated: 72% (+38 pts).'
+  ];
 
   const startExecution = () => {
     setPhase('executing');
     setLogIndex(0);
 
-    // Stream terminal lines
     let currentLine = 0;
     const interval = setInterval(() => {
       currentLine++;
       setLogIndex(currentLine);
-      if (currentLine >= TERMINAL_LOGS.length) {
+      if (currentLine >= terminalLogs.length) {
         clearInterval(interval);
-        setTimeout(() => {
+        // Call global context to record remediation & calculate genuine hash
+        approveRemediation().then(() => {
           sound.playSuccess();
           setPhase('verified');
-        }, 800);
+        });
       }
-    }, 400);
+    }, 380);
   };
 
   return (
@@ -60,14 +82,14 @@ export default function Approve() {
           Explicit Authorization & Execution
         </h1>
         <p className="body-lead" style={{ maxWidth: 740 }}>
-          CloudPilot enforces intentional friction. No AI agent or script can execute remediations autonomously. You explicitly sign and authorize the change.
+          CloudPilot enforces intentional friction. No AI agent or script can execute privileged changes autonomously. You explicitly sign and authorize the remediation.
         </p>
       </div>
 
       <div style={{ maxWidth: 860, margin: '0 auto' }}>
         <AnimatePresence mode="wait">
           {/* Phase 1: Review & Slide to Authorize */}
-          {phase === 'review' && (
+          {effectivePhase === 'review' && (
             <motion.div
               key="review"
               initial={{ opacity: 0, y: 16 }}
@@ -90,12 +112,12 @@ export default function Approve() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                      Authorized AWS Operation: Revoke Security Group Ingress
+                      Authorized AWS Operation: {isStudent ? 'ec2:StopInstances' : 'ec2:RevokeSecurityGroupIngress'}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                      Target: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>sg-0a1b2c3d4e5f</span> (launch-wizard-1, ap-south-1)<br />
-                      Remediation: Remove inbound rule for TCP Port 22 from <span style={{ fontFamily: 'var(--font-mono)' }}>0.0.0.0/0</span>.<br />
-                      Impact: New SSH connections from untrusted IPs will be blocked immediately. Existing active TCP sessions remain uninterrupted.
+                      Target: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{currentFinding.resource.id}</span> ({currentFinding.resource.name}, {currentFinding.resource.region})<br />
+                      Remediation: {isStudent ? 'Stop idle GPU instance to halt per-second compute fees.' : 'Remove inbound rule for TCP Port 22 from 0.0.0.0/0.'}<br />
+                      Safety Guarantee: {isStudent ? 'All EBS root volume training data preserved; can be started back in 45s.' : 'Existing TCP sessions persist without interruption.'}
                     </div>
                   </div>
                 </div>
@@ -137,20 +159,20 @@ export default function Approve() {
                 </div>
 
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  I confirm that I have reviewed the Safety Passport, verified that zero active SSH connections will be severed, and note the deterministic rollback CLI command.
+                  I confirm that I have reviewed the Safety Passport, verified that no active user traffic will be lost, and note the deterministic rollback CLI command.
                 </div>
               </div>
 
-              {/* Apple Physical Slide to Approve Component */}
+              {/* Apple Physical Slide to Approve Component with Keyboard Support */}
               <div className="apple-card" style={{ padding: 24, textAlign: 'center' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Lock size={14} /> Slide to Sign & Authorize Execution
+                  <Lock size={14} /> Slide or Press Enter to Sign & Authorize Execution
                 </div>
 
                 <SlideToApprove
                   disabled={!confirmedFriction}
                   onApprove={startExecution}
-                  text={confirmedFriction ? 'Slide to Sign & Execute Remediation' : 'Confirm Checkbox Above to Unlock Slider'}
+                  text={confirmedFriction ? 'Slide or Press Enter to Authorize' : 'Confirm Checkbox Above to Unlock Slider'}
                 />
 
                 <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 12 }}>
@@ -161,7 +183,7 @@ export default function Approve() {
           )}
 
           {/* Phase 2: Live Execution Terminal Simulation */}
-          {phase === 'executing' && (
+          {effectivePhase === 'executing' && (
             <motion.div
               key="executing"
               initial={{ opacity: 0, scale: 0.96 }}
@@ -176,12 +198,12 @@ export default function Approve() {
                 <div className="terminal-dot" style={{ background: '#27C93F' }} />
                 <div style={{ fontSize: 12, color: '#A1A1A6', marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Terminal size={13} />
-                  <span>CloudPilot Execution Agent • Verified Pipeline</span>
+                  <span>CloudPilot Execution Pipeline • Role 2 Assumed</span>
                 </div>
               </div>
 
               <div className="terminal-body">
-                {TERMINAL_LOGS.slice(0, logIndex + 1).map((log, i) => (
+                {terminalLogs.slice(0, logIndex + 1).map((log, i) => (
                   <div key={i} style={{ color: log.includes('200 OK') || log.includes('complete') ? '#30D158' : '#E2E8F0' }}>
                     {log}
                   </div>
@@ -192,7 +214,7 @@ export default function Approve() {
           )}
 
           {/* Phase 3: Verified Outcome & Score Jump */}
-          {phase === 'verified' && (
+          {effectivePhase === 'verified' && (
             <motion.div
               key="verified"
               initial={{ opacity: 0, y: 16 }}
@@ -207,19 +229,23 @@ export default function Approve() {
                   Remediation Successfully Executed & Verified
                 </h2>
                 <p style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 540, margin: '0 auto 24px' }}>
-                  The insecure SSH rule has been removed from <code style={{ fontFamily: 'var(--font-mono)' }}>sg-0a1b2c3d4e5f</code>. Verified via independent post-execution describe call.
+                  Target <code style={{ fontFamily: 'var(--font-mono)' }}>{currentFinding.resource.id}</code> has been safely remediated. Verified via independent post-execution describe query.
                 </p>
 
                 {/* Score Jump Highlight */}
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 20, padding: '14px 28px', background: 'var(--surface-secondary)', borderRadius: 16, marginBottom: 24 }}>
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Previous Security Score</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-crimson)' }}>34%</div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-crimson)' }}>
+                      {isStudent ? '42%' : '34%'}
+                    </div>
                   </div>
                   <ArrowRight size={20} color="var(--text-tertiary)" />
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>New Security Score</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>72% (+38 pts)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>New Verified Score</div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>
+                      {isStudent ? '88% (+46 pts)' : '72% (+38 pts)'}
+                    </div>
                   </div>
                 </div>
 
@@ -241,31 +267,35 @@ export default function Approve() {
               {/* State Diff Card */}
               <div className="apple-card">
                 <div className="section-title" style={{ marginBottom: 12 }}>
-                  Verified Rule State Diff
+                  Verified State Transformation Diff
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div style={{ padding: 14, background: '#FAF9F8', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 6 }}>
                       BEFORE EXECUTION
                     </div>
-                    {Object.entries(mockSafetyPassportApproved.executionResult!.beforeState).map(([k, v]) => (
-                      <div key={k} style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>{k}</span>
-                        <span style={{ color: 'var(--apple-crimson)', fontWeight: 600 }}>{v}</span>
-                      </div>
-                    ))}
+                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>{isStudent ? 'Compute State' : 'Inbound TCP:22 (SSH)'}</span>
+                      <span style={{ color: 'var(--apple-crimson)', fontWeight: 600 }}>{isStudent ? 'RUNNING (Idle)' : '0.0.0.0/0 (OPEN)'}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Hourly Cost</span>
+                      <span style={{ color: 'var(--apple-crimson)', fontWeight: 600 }}>{isStudent ? '$3.06 / hour' : 'Active Leak'}</span>
+                    </div>
                   </div>
 
                   <div style={{ padding: 14, background: '#FAF9F8', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 6 }}>
                       VERIFIED AFTER EXECUTION
                     </div>
-                    {Object.entries(mockSafetyPassportApproved.executionResult!.afterState).map(([k, v]) => (
-                      <div key={k} style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>{k}</span>
-                        <span style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>{v}</span>
-                      </div>
-                    ))}
+                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>{isStudent ? 'Compute State' : 'Inbound TCP:22 (SSH)'}</span>
+                      <span style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>{isStudent ? 'STOPPED (Verified)' : 'REMOVED ✓'}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Hourly Cost</span>
+                      <span style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>{isStudent ? '$0.00 / hour (Compute)' : 'Leak Eliminated'}</span>
+                    </div>
                   </div>
                 </div>
               </div>

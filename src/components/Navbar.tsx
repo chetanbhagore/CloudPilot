@@ -3,11 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Volume2, VolumeX, RotateCcw, Play
 } from 'lucide-react';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
-
-interface NavbarProps {
-  onResetDemo?: () => void;
-}
 
 const STORY_STEPS = [
   { path: '/connect', label: '1. Connect' },
@@ -17,9 +14,10 @@ const STORY_STEPS = [
   { path: '/audit', label: '5. Audit & Proof' },
 ];
 
-export default function Navbar({ onResetDemo }: NavbarProps) {
+export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { activeScenario, resetDemo } = useDemo();
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
 
   const toggleSound = () => {
@@ -30,6 +28,12 @@ export default function Navbar({ onResetDemo }: NavbarProps) {
   const handleStepClick = (path: string) => {
     sound.playClick();
     navigate(path);
+  };
+
+  const handleReset = () => {
+    sound.playSnap();
+    resetDemo();
+    navigate('/connect');
   };
 
   return (
@@ -61,7 +65,7 @@ export default function Navbar({ onResetDemo }: NavbarProps) {
         </div>
 
         {location.pathname !== '/' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-tertiary)' }}>
+          <div className="storyline-indicator" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-tertiary)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--apple-blue)', fontWeight: 600 }}>
               <Play size={10} fill="currentColor" /> Interactive Storyline
             </span>
@@ -73,6 +77,7 @@ export default function Navbar({ onResetDemo }: NavbarProps) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Sandbox Indicator */}
         <div
+          className="sandbox-pill"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -86,9 +91,11 @@ export default function Navbar({ onResetDemo }: NavbarProps) {
           }}
         >
           <div className="account-dot" />
-          <span>acct-123456789012</span>
+          <span>{activeScenario === 'student' ? 'acct-987654321098' : 'acct-123456789012'}</span>
           <span style={{ color: 'var(--text-tertiary)' }}>•</span>
-          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>ap-south-1</span>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+            {activeScenario === 'student' ? 'us-east-1' : 'ap-south-1'}
+          </span>
         </div>
 
         {/* Audio Sound Toggle */}
@@ -104,22 +111,16 @@ export default function Navbar({ onResetDemo }: NavbarProps) {
             background: soundEnabled ? 'var(--apple-blue-light)' : 'transparent'
           }}
           title={soundEnabled ? 'Mute synthesized UI audio' : 'Enable synthesized UI audio'}
+          aria-label={soundEnabled ? 'Mute sound' : 'Unmute sound'}
         >
           {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
         </button>
 
         {/* Replay / Reset Button */}
         <button
-          onClick={() => {
-            sound.playSnap();
-            if (onResetDemo) {
-              onResetDemo();
-            } else {
-              navigate('/connect');
-            }
-          }}
+          onClick={handleReset}
           className="btn btn-secondary btn-sm"
-          title="Restart interactive demo story from beginning"
+          title="Restart interactive demo story and reset all states"
         >
           <RotateCcw size={13} />
           <span>Reset Demo</span>

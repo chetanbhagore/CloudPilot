@@ -5,18 +5,42 @@ import {
   Check, RotateCcw, X, Award
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { mockAuditRecords } from '../data/mockData';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
 
 export default function AuditTrail() {
   const navigate = useNavigate();
+  const { auditRecords, activeHash, resetDemo, exportAuditCSV } = useDemo();
   const [showCertificate, setShowCertificate] = useState(false);
   const [exported, setExported] = useState(false);
 
+  const displayRecords = auditRecords.length > 0 ? auditRecords : [
+    {
+      id: 'audit-demo-initial',
+      findingId: 'finding-001',
+      action: 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
+      resource: 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
+      authorizedBy: 'demo@cloudpilot.dev',
+      authorizedAt: '2026-10-21T15:04:32Z',
+      executedAt: '2026-10-21T15:04:35Z',
+      awsResponse: '200 OK — RequestId: req-aws-9042b-fintech-mumbai',
+      outcome: 'success' as const,
+      beforeState: 'TCP:22 from 0.0.0.0/0: PRESENT',
+      afterState: 'TCP:22 from 0.0.0.0/0: REMOVED (verified)'
+    }
+  ];
+
   const handleExport = () => {
-    sound.playClick();
+    sound.playSuccess();
     setExported(true);
-    setTimeout(() => setExported(false), 2000);
+    exportAuditCSV();
+    setTimeout(() => setExported(false), 2400);
+  };
+
+  const handleRestart = () => {
+    sound.playSnap();
+    resetDemo();
+    navigate('/connect');
   };
 
   return (
@@ -51,9 +75,10 @@ export default function AuditTrail() {
           <button
             onClick={handleExport}
             className="btn btn-primary"
+            title="Download verified audit trail as a real CSV file"
           >
             {exported ? <Check size={14} /> : <Download size={14} />}
-            <span>{exported ? 'Exported CSV' : 'Export Audit CSV'}</span>
+            <span>{exported ? 'Downloaded CSV ✓' : 'Export Audit CSV'}</span>
           </button>
         </div>
       </div>
@@ -65,7 +90,7 @@ export default function AuditTrail() {
             <span className="metric-label">Total Actions Authorized</span>
             <Shield size={16} color="var(--apple-blue)" />
           </div>
-          <div className="metric-value">1</div>
+          <div className="metric-value">{displayRecords.length}</div>
           <div className="metric-footer" style={{ color: 'var(--text-secondary)' }}>
             Signed by human engineer
           </div>
@@ -80,7 +105,7 @@ export default function AuditTrail() {
             100%
           </div>
           <div className="metric-footer" style={{ color: 'var(--apple-emerald-dark)' }}>
-            1 Succeeded • 0 Failed
+            {displayRecords.length} Succeeded • 0 Failed
           </div>
         </div>
 
@@ -99,14 +124,14 @@ export default function AuditTrail() {
 
         <div className="metric-card">
           <div className="metric-header">
-            <span className="metric-label">Simulated SHA-256 Ledger</span>
+            <span className="metric-label">Computed SHA-256 Ledger Hash</span>
             <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>HASH</span>
           </div>
-          <div className="metric-value" style={{ fontSize: '1.25rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-            e3b0c442…b855
+          <div className="metric-value" style={{ fontSize: '1.05rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+            {activeHash.slice(0, 16)}…{activeHash.slice(-8)}
           </div>
           <div className="metric-footer" style={{ color: 'var(--apple-emerald-dark)' }}>
-            Tamper-proof signature
+            SHA-256 WebCrypto Verified
           </div>
         </div>
       </div>
@@ -117,15 +142,15 @@ export default function AuditTrail() {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
             Historical Remediation Records
           </div>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>1 verified record</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{displayRecords.length} verified record(s)</span>
         </div>
 
-        {mockAuditRecords.map((r, idx) => (
+        {displayRecords.map((r, idx) => (
           <div
             key={r.id}
             style={{
               padding: '24px 28px',
-              borderBottom: idx < mockAuditRecords.length - 1 ? '1px solid var(--border-subtle)' : 'none'
+              borderBottom: idx < displayRecords.length - 1 ? '1px solid var(--border-subtle)' : 'none'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
@@ -175,15 +200,12 @@ export default function AuditTrail() {
       {/* Demo Replay Callout */}
       <div style={{ marginTop: 32, textAlign: 'center' }}>
         <button
-          onClick={() => {
-            sound.playSnap();
-            navigate('/connect');
-          }}
+          onClick={handleRestart}
           className="btn btn-secondary"
           style={{ padding: '12px 24px', fontSize: 14 }}
         >
           <RotateCcw size={15} />
-          <span>Restart Walkthrough with Alternative Scenario</span>
+          <span>Reset Demo State & Test Alternative Scenario</span>
         </button>
       </div>
 
@@ -212,6 +234,7 @@ export default function AuditTrail() {
                 onClick={() => setShowCertificate(false)}
                 className="btn btn-ghost btn-sm"
                 style={{ position: 'absolute', top: 16, right: 16, borderRadius: '50%', width: 32, height: 32, padding: 0 }}
+                aria-label="Close modal"
               >
                 <X size={16} />
               </button>
@@ -231,14 +254,14 @@ export default function AuditTrail() {
               </div>
 
               <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
-                This certificate attests that finding <strong>SEC-SG-001 (SSH port 22 open)</strong> on resource <strong>sg-0a1b2c3d4e5f</strong> was reviewed via Safety Passport SP-2026-9042, authorized by <strong>demo@cloudpilot.dev</strong>, and verified via independent AWS describe verification.
+                This certificate attests that remediation on resource <strong>{displayRecords[0].resource}</strong> was reviewed via Safety Passport protocol, authorized by <strong>demo@cloudpilot.dev</strong>, and verified via independent AWS describe verification.
               </p>
 
               <div style={{ background: '#FAF9F8', padding: 16, borderRadius: 12, border: '1px solid var(--border-subtle)', fontSize: 12, fontFamily: 'var(--font-mono)', marginBottom: 24, lineHeight: 1.7 }}>
-                <div>Ledger ID: audit-20261021-0042</div>
-                <div>AWS Request ID: a1b2c3d4-5678-90ab-cdef-1234567890ab</div>
-                <div>Verification Method: Post-execution AWS API interrogation</div>
-                <div>Integrity Fingerprint: SHA256-4b92f7e8a910...</div>
+                <div>Ledger ID: {displayRecords[0].id}</div>
+                <div>AWS Verification Response: {displayRecords[0].awsResponse}</div>
+                <div>Verification Method: Independent AWS API interrogation</div>
+                <div style={{ wordBreak: 'break-all' }}>SHA-256 Fingerprint: {activeHash}</div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>

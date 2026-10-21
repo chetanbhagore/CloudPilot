@@ -37,9 +37,9 @@
 
   /* Typography Colors */
   --text-primary: #1D1D1F;
-  --text-secondary: #6E6E73;
-  --text-tertiary: #86868B;
-  --text-quaternary: #A1A1A6;
+  --text-secondary: #525257;
+  --text-tertiary: #636366;
+  --text-quaternary: #8E8E93;
 
   /* Apple System Palette */
   --apple-blue: #0071E3;
@@ -120,6 +120,12 @@ h1, h2, h3, h4, .display-heading {
   display: flex;
   min-height: 100vh;
   background-color: var(--canvas-bg);
+}
+
+.app-shell {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
 }
 
 .layout-sidebar {
@@ -887,3 +893,105 @@ h1, h2, h3, h4, .display-heading {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Responsive Tablet & Mobile Media Queries ── */
+@media (max-width: 900px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .layout-sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+
+  .nav-section-title,
+  .sidebar-account-card {
+    display: none;
+  }
+
+  .sidebar-brand {
+    margin-bottom: 0;
+    padding: 4px 8px;
+  }
+
+  .sidebar-link {
+    padding: 6px 10px;
+    font-size: 12.5px;
+  }
+
+  .page-container {
+    padding: 18px 18px 48px;
+  }
+
+  .top-nav {
+    padding: 0 16px;
+  }
+
+  .sandbox-pill,
+  .storyline-indicator {
+    display: none;
+  }
+
+  .keynote-hero {
+    padding: 28px 24px;
+  }
+
+  .display-title {
+    font-size: 1.85rem;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .pitch-hud {
+    width: calc(100vw - 32px);
+    right: 16px;
+    bottom: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .keynote-hero {
+    padding: 22px 18px;
+  }
+
+  .display-title {
+    font-size: 1.6rem;
+  }
+
+  .top-nav {
+    overflow-x: auto;
+  }
+
+  .nav-pill-group {
+    flex-shrink: 0;
+  }
+
+  .passport-body {
+    padding: 18px 16px;
+  }
+
+  .passport-top-ribbon {
+    padding: 18px 20px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+

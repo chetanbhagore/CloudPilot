@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { DemoProvider } from './context/DemoContext';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import PitchHud from './components/PitchHud';
@@ -13,7 +14,7 @@ function AppLayout() {
   const location = useLocation();
 
   return (
-    <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
+    <div className="app-shell">
       <Sidebar />
       <div className="layout-main">
         <Navbar />
@@ -35,7 +36,9 @@ function AppLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <DemoProvider>
+        <AppLayout />
+      </DemoProvider>
     </BrowserRouter>
   );
 }
