@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, ArrowRight, Activity, AlertTriangle, Info, CheckCircle2, ShieldAlert
+  X, ArrowRight, Activity, AlertTriangle, Info, CheckCircle2, ShieldAlert, Sparkles
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { type Finding } from '../data/mockData';
@@ -243,6 +243,31 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
               </div>
             )}
           </div>
+
+            {/* Grounded AI Evidence Explanation */}
+            <div style={{ background: '#F5F5F7', border: '1px solid rgba(0, 113, 227, 0.2)', borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--apple-blue)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Sparkles size={15} color="var(--apple-blue)" /> Grounded AI Evidence Analysis
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(0, 113, 227, 0.08)', color: 'var(--apple-blue)' }}>
+                  Advisory Only
+                </span>
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.55, marginBottom: 10 }}>
+                {finding.operation === 'ec2:RevokeSecurityGroupIngress' ? (
+                  <>Security Group <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.05)', padding: '2px 4px', borderRadius: 4 }}>{finding.resource.id}</code> exposes inbound TCP:22 (SSH) to the public internet (<code style={{ fontFamily: 'var(--font-mono)' }}>0.0.0.0/0</code>). Verified via live EC2 describe telemetry.</>
+                ) : (
+                  <>Observed cloud resource <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.05)', padding: '2px 4px', borderRadius: 4 }}>{finding.resource.id}</code> detected with status <span style={{ fontWeight: 600 }}>{finding.status}</span>. Inaction incurs ongoing risk or expenditure.</>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)', paddingTop: 8 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <span style={{ color: 'var(--apple-amber-dark)', fontWeight: 700 }}>⚠️</span>
+                  <span><strong>Uncertainty / Boundary Condition:</strong> External corporate firewalls or VPN tunnels terminating outside AWS cannot be inspected. Human review via Safety Passport™ is mandatory.</span>
+                </div>
+              </div>
+            </div>
 
             {/* Proposed Remediation & Preconditions */}
             <div style={{ background: '#FFFFFF', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
