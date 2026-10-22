@@ -1,10 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import {
   AuthContext,
   type UserProfile,
   type TeamMember,
   type CloudNotification
 } from './authDefinition';
+
+function safeGetStorageJSON<T>(key: string, fallback: T): T {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const item = localStorage.getItem(key);
+    if (!item || item === 'undefined' || item === 'null') return fallback;
+    return JSON.parse(item) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 const DEFAULT_USER: UserProfile = {
   id: 'usr_cp_883921',
@@ -98,48 +109,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     : 'http://localhost:8000';
 
   const [user, setUser] = useState<UserProfile>(() => {
-    const saved = localStorage.getItem('cloudpilot_user');
-    return saved ? JSON.parse(saved) : DEFAULT_USER;
+    return safeGetStorageJSON<UserProfile>('cloudpilot_user', DEFAULT_USER);
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    const savedAuth = localStorage.getItem('cloudpilot_authenticated');
-    const token = localStorage.getItem('cloudpilot_jwt_token');
-    return savedAuth !== null ? JSON.parse(savedAuth) : !!token;
-  });
-
-  // Verify server identity on startup
-  useState(() => {
-    if (typeof window !== 'undefined') {
+    try {
+      if (typeof window === 'undefined') return true;
+      const savedAuth = localStorage.getItem('cloudpilot_authenticated');
+      if (savedAuth === 'false') return false;
+      if (savedAuth === 'true') return true;
       const token = localStorage.getItem('cloudpilot_jwt_token');
-      if (token) {
-        fetch(`${backendUrl}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((me) => {
-            if (me && me.id) {
-              setUser((prev) => ({
-                ...prev,
-                id: me.id,
-                email: me.email,
-                name: me.name,
-                role: me.role,
-                organization: me.organization_id,
-                permissions: me.permissions,
-                isServerVerified: true
-              }));
-              setIsAuthenticated(true);
-            } else if (localStorage.getItem('cloudpilot_app_mode') === 'live') {
-              // Stale or revoked token in live mode fails closed
-              localStorage.removeItem('cloudpilot_jwt_token');
-              setIsAuthenticated(false);
-            }
-          })
-          .catch(() => {});
-      }
+      if (token && token !== 'undefined') return true;
+      // Default to true with pre-configured demo user on first launch
+      return true;
+    } catch {
+      return true;
     }
   });
+
+  // Verify server identity on startup safely
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const token = localStorage.getItem('cloudpilot_jwt_token');
+        if (token && token !== 'undefined') {
+          fetch(`${backendUrl}/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((me) => {
+              if (me && me.id) {
+                setUser((prev) => ({
+                  ...prev,
+                  id: me.id,
+                  email: me.email,
+                  name: me.name,
+                  role: me.role,
+                  organization: me.organization_id,
+                  permissions: me.permissions,
+                  isServerVerified: true
+                }));
+                setIsAuthenticated(true);
+              } else if (localStorage.getItem('cloudpilot_app_mode') === 'live') {
+                // Stale or revoked token in live mode fails closed
+                localStorage.removeItem('cloudpilot_jwt_token');
+                setIsAuthenticated(false);
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
+  }, [backendUrl]);
 
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(INITIAL_TEAM);
   const [notifications, setNotifications] = useState<CloudNotification[]>(INITIAL_NOTIFICATIONS);
@@ -199,9 +220,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem('cloudpilot_authenticated');
-    localStorage.removeItem('cloudpilot_jwt_token');
-    localStorage.removeItem('cloudpilot_user');
+    try {
+      localStorage.setItem('cloudpilot_authenticated', 'false');
+      localStorage.removeItem('cloudpilot_jwt_token');
+      localStorage.removeItem('cloudpilot_user');
+    } catch {}
   };
 
   const markNotificationRead = (id: string) => {

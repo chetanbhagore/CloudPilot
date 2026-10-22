@@ -36,10 +36,12 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   // App Mode: 'demo' (mock scenarios) vs 'live' (real AWS via FastAPI backend)
   const [appMode, setAppModeState] = useState<AppMode>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('cloudpilot_app_mode');
-      if (saved === 'live' || saved === 'demo') return saved;
-    }
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('cloudpilot_app_mode');
+        if (saved === 'live' || saved === 'demo') return saved;
+      }
+    } catch {}
     return 'demo';
   });
 
@@ -56,12 +58,14 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   // Active findings displayed in the UI
   const [findings, setFindings] = useState<Finding[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('cloudpilot_app_mode');
-      if (saved === 'live') {
-        return [];
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('cloudpilot_app_mode');
+        if (saved === 'live') {
+          return [];
+        }
       }
-    }
+    } catch {}
     return cloneFindings(FINTECH_FINDINGS);
   });
 
