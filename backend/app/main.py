@@ -28,6 +28,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Correlation ID & Security Headers Middleware ──────────────────────────────
+@app.middleware("http")
+async def security_and_correlation_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("X-Correlation-ID") or f"corr-{uuid.uuid4().hex[:12]}"
+    request.state.correlation_id = correlation_id
+
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 # ── Global Standardized Exception Handlers ─────────────────────────────────────
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -84,6 +100,7 @@ app.include_router(cost.router)
 
 @app.on_event("startup")
 def on_startup():
+    settings.validate_production_readiness()
     from app.db.database import init_database_schema
     init_database_schema()
     logger.info("=" * 60)
