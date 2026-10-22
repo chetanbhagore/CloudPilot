@@ -63,6 +63,11 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {finding.id.startsWith('live-') && (
+                <span className="badge" style={{ background: 'rgba(0, 113, 227, 0.12)', color: 'var(--apple-blue)', fontWeight: 700, border: '1px solid rgba(0, 113, 227, 0.25)' }}>
+                  ⚡ LIVE AWS
+                </span>
+              )}
               {isResolved ? (
                 <span className="badge badge-success">
                   <CheckCircle2 size={12} /> RESOLVED ✓
@@ -165,7 +170,7 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                 {finding.estimatedMonthlyCost && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 2 }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Estimated Monthly Run-Rate:</span>
-                    <span style={{ color: 'var(--apple-crimson-dark)', fontWeight: 700 }}>~${finding.estimatedMonthlyCost.toFixed(2)} USD</span>
+                    <span style={{ color: 'var(--apple-crimson-dark)', fontWeight: 700 }}>~${finding.estimatedMonthlyCost.toFixed(2)} USD (₹{Math.round(finding.estimatedMonthlyCost * 83).toLocaleString('en-IN')}/mo)</span>
                   </div>
                 )}
               </div>

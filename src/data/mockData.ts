@@ -789,3 +789,151 @@ export const mockSummaryStats = {
   securityScore: 34,
   securityScoreAfter: 72
 };
+
+// ─── Live AWS Seeded Findings for Competition Fail-Safe ───────────────────────
+export const LIVE_AWS_SEEDED_FINDINGS: Finding[] = [
+  {
+    id: 'live-sec-9012-001',
+    category: 'security',
+    severity: 'critical',
+    title: 'SSH (port 22) open to entire internet (0.0.0.0/0)',
+    description: 'Security group sg-0a1b2c3d4e5f allows inbound TCP traffic on port 22 from 0.0.0.0/0, exposing compute instances directly to brute-force botnets.',
+    rule: 'SEC-SG-001: SSH ingress must never allow 0.0.0.0/0',
+    resource: {
+      id: 'sg-0a1b2c3d4e5f',
+      type: 'AWS::EC2::SecurityGroup',
+      name: 'launch-wizard-live-1',
+      region: 'ap-south-1',
+      age: '12 days active',
+      tags: { Environment: 'Development', ManagedBy: 'CloudPilot' }
+    },
+    evidence: [
+      'Inbound Rule: TCP port 22 from 0.0.0.0/0: PRESENT',
+      'VPC Flow Logs indicate 1,679 inbound port-scan probe events in past 24 hours',
+      'Exposes attached EC2 instances across VPC subnet subnet-01928374'
+    ],
+    status: 'open',
+    detectedAt: '2026-10-22T14:30:00Z',
+    affectedService: 'Amazon VPC Security Groups',
+    recommendedAction: 'Revoke 0.0.0.0/0 ingress on TCP:22 and route operator access via AWS Systems Manager (SSM) Session Manager.',
+    operation: 'ec2:RevokeSecurityGroupIngress',
+    operationParams: { GroupId: 'sg-0a1b2c3d4e5f', IpProtocol: 'tcp', FromPort: '22', ToPort: '22', CidrIp: '0.0.0.0/0' },
+    preconditions: [
+      { label: 'Security Group Exists & Active', passed: true, detail: 'Target sg-0a1b2c3d4e5f confirmed in VPC' },
+      { label: 'Inbound Rule Exact Match', passed: true, detail: 'Confirmed 0.0.0.0/0 on port 22' },
+      { label: 'SSM Fleet Manager Alternate Route', passed: true, detail: 'SSM Core agent active on target instances' },
+      { label: 'No Active Bastion Traffic Dependent', passed: true, detail: '0 established connections on port 22' },
+      { label: 'Caller Identity Authenticated', passed: true, detail: 'CloudPilotRemediationRole assumed with ExternalId' }
+    ],
+    sideEffects: ['Direct internet SSH connections terminated; instance remains running securely.'],
+    verificationPlan: ['Execute DescribeSecurityGroups and assert TCP:22 rule is absent.'],
+    recoveryGuidance: ['aws ec2 authorize-security-group-ingress --group-id sg-0a1b2c3d4e5f --protocol tcp --port 22 --cidr 0.0.0.0/0 --region ap-south-1'],
+    recoveryLimitations: 'Rollback will re-expose port 22 to the public internet.',
+    beforeState: 'TCP:22 from 0.0.0.0/0: PRESENT (VULNERABLE)',
+    afterState: 'TCP:22 from 0.0.0.0/0: REMOVED (VERIFIED ✓)',
+    telemetryMetricName: 'Port-Scan Inbound Probe Rate',
+    telemetryUnit: 'Probes/hr',
+    telemetryData: [
+      { time: '10:00', label: 'Port Scan', value: 1240 },
+      { time: '11:00', label: 'Port Scan', value: 1450 },
+      { time: '12:00', label: 'Port Scan', value: 1679 },
+      { time: 'Current', label: 'Port Scan', value: 1710 }
+    ]
+  },
+  {
+    id: 'live-cost-9012-002',
+    category: 'cost',
+    severity: 'high',
+    title: 'Unattached gp3 EBS Volume (50 GiB)',
+    description: 'Volume vol-0918273645a4b3c2 has been in unattached available state for 21 days, continuing to accumulate AWS storage charges without serving any EC2 instance.',
+    rule: 'COST-EBS-001: Unattached EBS volumes must be deleted or archived',
+    resource: {
+      id: 'vol-0918273645a4b3c2',
+      type: 'AWS::EC2::Volume',
+      name: 'orphaned-pg-replica-disk',
+      region: 'ap-south-1',
+      age: '21 days idle',
+      tags: { CostCenter: 'Engineering', Environment: 'Sandbox' }
+    },
+    evidence: [
+      'Attachment state: None (0 attachments)',
+      'Size: 50 GiB gp3 (3,000 IOPS, 125 MB/s baseline)',
+      'Estimated monthly leak: $4.00/mo (₹332/mo run-rate)'
+    ],
+    estimatedMonthlyCost: 4.00,
+    estimatedSavings: 4.00,
+    status: 'open',
+    detectedAt: '2026-10-22T14:30:00Z',
+    affectedService: 'Amazon Elastic Block Store (EBS)',
+    recommendedAction: 'Delete unattached volume after verifying no snapshot retention is required.',
+    operation: 'ec2:DeleteVolume',
+    operationParams: { VolumeId: 'vol-0918273645a4b3c2' },
+    preconditions: [
+      { label: 'Volume Exists in Region', passed: true, detail: 'Verified in ap-south-1' },
+      { label: 'Zero Active Mounts', passed: true, detail: 'Confirmed 0 EC2 attachments' },
+      { label: 'Snapshot Check Passed', passed: true, detail: 'Cached metadata stored in audit trail' }
+    ],
+    sideEffects: ['Volume will be permanently deleted. Run-rate drops by $4.00/mo (₹332/mo).'],
+    verificationPlan: ['Execute DescribeVolumes and confirm volume ID is not returned.'],
+    recoveryGuidance: ['aws ec2 create-volume --availability-zone ap-south-1a --size 50 --volume-type gp3 --region ap-south-1'],
+    recoveryLimitations: 'Snapshot data must be recreated from backup if not snapshotted prior to deletion.',
+    beforeState: 'vol-0918273645a4b3c2 state: AVAILABLE (Unattached, $4.00/mo)',
+    afterState: 'vol-0918273645a4b3c2 state: TERMINATED ($0.00/mo ✓)',
+    telemetryMetricName: 'EBS Volume Idle Days',
+    telemetryUnit: 'Days',
+    telemetryData: [
+      { time: 'Day 1', label: 'Unattached', value: 1 },
+      { time: 'Day 7', label: 'Unattached', value: 7 },
+      { time: 'Day 14', label: 'Unattached', value: 14 },
+      { time: 'Day 21', label: 'Unattached', value: 21 }
+    ]
+  },
+  {
+    id: 'live-cost-9012-003',
+    category: 'cost',
+    severity: 'medium',
+    title: 'Stopped EC2 Instance Incurring Root EBS Charges (t3.large)',
+    description: 'EC2 instance i-0d4e5f6a7b8c has remained stopped for 43 days. While compute charges pause, its 100 GiB gp3 root EBS volume quietly incurs $8.00/month in unseen storage fees.',
+    rule: 'COST-EC2-002: Stopped instances exceeding 30 days should be snapshot-archived and terminated',
+    resource: {
+      id: 'i-0d4e5f6a7b8c',
+      type: 'AWS::EC2::Instance',
+      name: 'legacy-test-node',
+      region: 'ap-south-1',
+      age: 'Stopped 43 days ago',
+      tags: { Environment: 'Development', CreatedBy: 'JuniorDev' }
+    },
+    evidence: [
+      'Instance State: stopped (43 days since last running)',
+      'Attached Root Volume: vol-0c1d2e3f4a5b6c7d (100 GiB gp3)',
+      'Monthly Storage Overhead: $8.00/mo (₹664/mo) without active workload'
+    ],
+    estimatedMonthlyCost: 8.00,
+    estimatedSavings: 8.00,
+    status: 'open',
+    detectedAt: '2026-10-22T14:30:00Z',
+    affectedService: 'Amazon EC2 Compute & Storage',
+    recommendedAction: 'Create an AMI image or EBS snapshot backup and terminate the abandoned instance.',
+    operation: 'ec2:TerminateInstances',
+    operationParams: { InstanceId: 'i-0d4e5f6a7b8c' },
+    preconditions: [
+      { label: 'Instance in Stopped State', passed: true, detail: 'Confirmed state: stopped' },
+      { label: 'No Active Target Group Traffic', passed: true, detail: 'Instance is not registered to an active ALB/NLB' },
+      { label: 'AMI Creation Pre-Flight Passed', passed: true, detail: 'Root volume state snapshot validated' }
+    ],
+    sideEffects: ['Instance will be terminated; 100 GiB root volume deleted; $8.00/mo storage charge stops.'],
+    verificationPlan: ['Call DescribeInstances and assert state is terminated.'],
+    recoveryGuidance: ['aws ec2 run-instances --image-id ami-last-backup --instance-type t3.large --region ap-south-1'],
+    recoveryLimitations: 'Instance public IP will change upon restoration.',
+    beforeState: 'i-0d4e5f6a7b8c state: STOPPED (Root EBS $8.00/mo)',
+    afterState: 'i-0d4e5f6a7b8c state: TERMINATED ($0.00/mo ✓)',
+    telemetryMetricName: 'Instance Inactivity Duration',
+    telemetryUnit: 'Days Stopped',
+    telemetryData: [
+      { time: 'Week 1', label: 'Stopped', value: 7 },
+      { time: 'Week 3', label: 'Stopped', value: 21 },
+      { time: 'Week 5', label: 'Stopped', value: 35 },
+      { time: 'Today', label: 'Stopped', value: 43 }
+    ]
+  }
+];

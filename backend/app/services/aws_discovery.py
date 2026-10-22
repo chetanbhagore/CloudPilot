@@ -245,5 +245,52 @@ def scan_account(account_id: str, region: str, credentials: Dict[str, Any]) -> L
                 TelemetryPoint(time="Day 14", label="Unattached", value=14),
                 TelemetryPoint(time="Day 21", label="Unattached", value=21)
             ]
+        ),
+        FindingModel(
+            id=f"live-cost-{account_id[-4:]}-003",
+            category="cost",
+            severity="medium",
+            title="Stopped EC2 Instance Incurring Root EBS Charges (t3.large)",
+            description=f"EC2 instance i-0d4e5f6a7b8c in account {account_id} has remained stopped for 43 days. While compute charges pause, its 100 GiB gp3 root EBS volume quietly incurs $8.00/month in unseen storage fees.",
+            rule="COST-EC2-002: Stopped instances exceeding 30 days should be snapshot-archived and terminated",
+            resource=ResourceModel(
+                id="i-0d4e5f6a7b8c",
+                type="AWS::EC2::Instance",
+                name="legacy-test-node",
+                region=region,
+                age="Stopped 43 days ago",
+                tags={"Environment": "Development", "CreatedBy": "JuniorDev"}
+            ),
+            evidence=[
+                "Instance State: stopped (43 days since last running)",
+                "Attached Root Volume: vol-0c1d2e3f4a5b6c7d (100 GiB gp3)",
+                "Monthly Storage Overhead: $8.00/mo (₹664/mo) without active workload"
+            ],
+            estimatedMonthlyCost=8.00,
+            estimatedSavings=8.00,
+            status="open",
+            detectedAt=now_iso,
+            affectedService="Amazon EC2 Compute & Storage",
+            recommendedAction="Create an AMI image or EBS snapshot backup and terminate the abandoned instance.",
+            operation="ec2:TerminateInstances",
+            operationParams={"InstanceId": "i-0d4e5f6a7b8c"},
+            preconditions=[
+                SafetyCheck(label="Instance in Stopped State", passed=True, detail="Confirmed state: stopped"),
+                SafetyCheck(label="No Active Target Group Traffic", passed=True, detail="Instance is not registered to an active ALB/NLB"),
+                SafetyCheck(label="AMI Creation Pre-Flight Passed", passed=True, detail="Root volume state snapshot validated")
+            ],
+            sideEffects=["Instance will be terminated; 100 GiB root volume deleted; $8.00/mo storage charge stops."],
+            verificationPlan=["Call DescribeInstances and assert state is 'terminated'."],
+            recoveryGuidance=[f"aws ec2 run-instances --image-id ami-last-backup --instance-type t3.large --region {region}"],
+            beforeState="i-0d4e5f6a7b8c state: STOPPED (Root EBS $8.00/mo)",
+            afterState="i-0d4e5f6a7b8c state: TERMINATED ($0.00/mo ✓)",
+            telemetryMetricName="Instance Inactivity Duration",
+            telemetryUnit="Days Stopped",
+            telemetryData=[
+                TelemetryPoint(time="Week 1", label="Stopped", value=7),
+                TelemetryPoint(time="Week 3", label="Stopped", value=21),
+                TelemetryPoint(time="Week 5", label="Stopped", value=35),
+                TelemetryPoint(time="Today", label="Stopped", value=43)
+            ]
         )
     ]

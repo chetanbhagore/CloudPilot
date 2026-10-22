@@ -110,8 +110,12 @@ def assume_role(
 def get_ec2_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
     """
     Returns a boto3 EC2 client initialized with assumed temporary STS credentials.
+    Returns None if boto3 is unavailable, credentials are simulated, or missing keys.
     """
-    if not boto3 or credentials.get("is_simulated"):
+    if not boto3 or not credentials or credentials.get("is_simulated"):
+        return None
+    
+    if "access_key_id" not in credentials or "secret_access_key" not in credentials:
         return None
     
     return boto3.client(
@@ -119,5 +123,6 @@ def get_ec2_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
         region_name=region,
         aws_access_key_id=credentials["access_key_id"],
         aws_secret_access_key=credentials["secret_access_key"],
-        aws_session_token=credentials["session_token"]
+        aws_session_token=credentials.get("session_token")
     )
+

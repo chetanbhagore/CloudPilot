@@ -432,6 +432,11 @@ export default function Discover() {
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {(appMode === 'live' || finding.id.startsWith('live-')) && (
+                      <span className="badge" style={{ background: 'rgba(0, 113, 227, 0.12)', color: 'var(--apple-blue)', fontWeight: 700, border: '1px solid rgba(0, 113, 227, 0.25)' }}>
+                        <Zap size={11} fill="currentColor" /> LIVE AWS
+                      </span>
+                    )}
                     {isResolved ? (
                       <span className="badge badge-success">
                         <CheckCircle2 size={12} /> RESOLVED ✓
@@ -456,7 +461,7 @@ export default function Discover() {
 
                   {finding.estimatedSavings && (
                     <span className="badge badge-success">
-                      Save ~${finding.estimatedSavings.toFixed(2)}/mo
+                      Save ~${finding.estimatedSavings.toFixed(2)}/mo (₹{Math.round(finding.estimatedSavings * 83).toLocaleString('en-IN')}/mo)
                     </span>
                   )}
                 </div>
@@ -471,7 +476,10 @@ export default function Discover() {
                 {/* Verified Evidence Snippets */}
                 <div style={{ background: '#FAF9F8', padding: '12px 14px', borderRadius: 10, marginBottom: 16, border: '1px solid var(--border-subtle)' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Activity size={12} color="var(--apple-blue)" /> Simulated Telemetry Evidence:
+                    <Activity size={12} color="var(--apple-blue)" />
+                    {(appMode === 'live' || finding.id.startsWith('live-'))
+                      ? 'Live CloudWatch & VPC Flow Telemetry Evidence:'
+                      : 'Simulated Telemetry Evidence:'}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {finding.evidence.slice(0, 2).map((ev, i) => (

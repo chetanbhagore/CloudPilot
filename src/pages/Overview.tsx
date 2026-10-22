@@ -22,7 +22,8 @@ export default function Overview() {
     monthlyWaste,
     resolvedCount,
     auditRecords,
-    setSelectedFindingId
+    setSelectedFindingId,
+    appMode
   } = useDemo();
 
   const isStudent = activeScenario === 'student';
@@ -227,9 +228,18 @@ export default function Overview() {
           </div>
           <div className="metric-value" style={{ color: 'var(--apple-amber-dark)' }}>
             ~${monthlyWaste.toFixed(2)}
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-tertiary)', marginLeft: 6 }}>
+              (₹{Math.round(monthlyWaste * 83).toLocaleString('en-IN')})
+            </span>
           </div>
           <div className="metric-footer" style={{ color: 'var(--text-secondary)' }}>
-            <span>{isStudent ? 'Assumes 24/7 idle GPU at $3.06/hr' : 'Assumes detached EBS + unassociated EIP'}</span>
+            <span>
+              {appMode === 'live'
+                ? 'Unattached EBS + stopped EC2 root disk overhead'
+                : isStudent
+                ? 'Assumes 24/7 idle GPU at $3.06/hr'
+                : 'Assumes detached EBS + unassociated EIP'}
+            </span>
           </div>
         </motion.div>
 

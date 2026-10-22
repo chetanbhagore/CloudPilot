@@ -91,7 +91,7 @@ class DiscoveryResponse(BaseModel):
 
 # ─── Approval & Remediation Schemas ────────────────────────────────────────────
 class ApproveRequest(BaseModel):
-    finding_id: str
+    finding_id: Optional[str] = None
     user_email: str = "chetan@cloudpilot.io"
     simulate_only: bool = False
 

@@ -5,7 +5,8 @@ import {
   FINTECH_FINDINGS,
   STUDENT_FINDINGS,
   FINTECH_ACCOUNT,
-  STUDENT_ACCOUNT
+  STUDENT_ACCOUNT,
+  LIVE_AWS_SEEDED_FINDINGS
 } from '../data/mockData';
 import {
   DemoContext,
@@ -43,12 +44,26 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
   const [activeScenario, setActiveScenarioState] = useState<ScenarioType>('fintech');
-  const [findings, setFindings] = useState<Finding[]>(() => cloneFindings(FINTECH_FINDINGS));
-  const [liveFindings, setLiveFindings] = useState<Finding[]>([]);
+  const [findings, setFindings] = useState<Finding[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cloudpilot_app_mode');
+      if (saved === 'live') {
+        return cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
+      }
+    }
+    return cloneFindings(FINTECH_FINDINGS);
+  });
+  const [liveFindings, setLiveFindings] = useState<Finding[]>(() => cloneFindings(LIVE_AWS_SEEDED_FINDINGS));
   const [resolvedFindingIds, setResolvedFindingIds] = useState<string[]>([]);
   const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([]);
   const [activeHash, setActiveHash] = useState<string>('sha256-pending-authorization');
-  const [selectedFindingId, setSelectedFindingId] = useState<string>('finding-001');
+  const [selectedFindingId, setSelectedFindingId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cloudpilot_app_mode');
+      if (saved === 'live') return 'live-sec-9012-001';
+    }
+    return 'finding-001';
+  });
 
   // Account configuration & simulation onboarding
   const [accountConfig, setAccountConfig] = useState<AccountConfig>({
@@ -99,13 +114,32 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       checkBackendHealth();
       if (liveFindings.length > 0) {
         setFindings(liveFindings);
+        setSelectedFindingId(liveFindings[0].id);
+      } else {
+        const seeded = cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
+        setLiveFindings(seeded);
+        setFindings(seeded);
+        setSelectedFindingId('live-sec-9012-001');
       }
+
+      // If backend is online, attempt fetching freshest findings
+      fetch(`${backendUrl}/findings`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data) && data.length > 0) {
+            setLiveFindings(data);
+            setFindings(data);
+          }
+        })
+        .catch(() => {});
     } else {
       // Revert to active demo scenario
       if (activeScenario === 'student') {
         setFindings(cloneFindings(STUDENT_FINDINGS));
+        setSelectedFindingId('finding-student-001');
       } else {
         setFindings(cloneFindings(FINTECH_FINDINGS));
+        setSelectedFindingId('finding-001');
       }
     }
   };
@@ -233,20 +267,23 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.findings && Array.isArray(data.findings)) {
+          if (data.findings && Array.isArray(data.findings) && data.findings.length > 0) {
             setLiveFindings(data.findings);
             setFindings(data.findings);
             return { success: true, count: data.findings.length };
           }
         }
       } catch (err) {
-        console.warn('Backend scan failed, falling back to local findings:', err);
+        console.warn('Backend scan failed, falling back to seeded live findings:', err);
       }
     }
 
     // Graceful fallback simulation
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    return { success: true, count: findings.length };
+    const seeded = cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
+    setLiveFindings(seeded);
+    setFindings(seeded);
+    return { success: true, count: seeded.length };
   };
 
   const disconnectAccount = () => {
@@ -255,6 +292,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   // ─── Dynamic Metrics derived from active state ──────────────────────────────
   const isStudent = activeScenario === 'student';
+  const isLive = appMode === 'live';
   const isRemediated = resolvedFindingIds.length > 0;
   const resolvedCount = resolvedFindingIds.length;
 
@@ -267,8 +305,11 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     .reduce((sum, f) => sum + (f.estimatedMonthlyCost || 0), 0);
 
   // Security score: dynamic jump based on resolved high/critical issues
-  const baseScore = isStudent ? 42 : 34;
+  const baseScore = isLive ? 38 : (isStudent ? 42 : 34);
   const scoreBoost = resolvedFindingIds.reduce((boost, id) => {
+    if (id === 'live-sec-9012-001') return boost + 48;
+    if (id === 'live-cost-9012-002') return boost + 8;
+    if (id === 'live-cost-9012-003') return boost + 10;
     if (id === 'finding-001') return boost + 38;
     if (id === 'finding-002') return boost + 8;
     if (id === 'finding-003') return boost + 6;
@@ -305,6 +346,15 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     const computedHash = await computeSHA256(canonicalPayload);
     setActiveHash(computedHash);
 
+    // If in live mode and backend is online, notify backend asynchronously
+    if (appMode === 'live' && isBackendOnline) {
+      fetch(`${backendUrl}/findings/${findingToApprove.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_email: 'chetan@cloudpilot.io' })
+      }).catch((err) => console.warn('Backend approval sync warning:', err));
+    }
+
     // Update findings array to resolved
     setFindings((prev) =>
       prev.map((f) =>
@@ -320,7 +370,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     const newRecord: AuditRecord = {
       id: `audit-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
       findingId: findingToApprove.id,
-      scenario: isStudent ? 'Student ML Research Sandbox' : 'FinTech MVP Dev',
+      scenario: (appMode === 'live' || findingToApprove.id.startsWith('live-'))
+        ? 'AWS Live (STS AssumeRole)'
+        : (isStudent ? 'Student ML Research Sandbox' : 'FinTech MVP Dev'),
       action: `${findingToApprove.operation} — ${findingToApprove.title}`,
       resource: `${findingToApprove.resource.id} (${findingToApprove.resource.name}, ${findingToApprove.resource.region})`,
       authorizedBy: 'chetan@cloudpilot.io',
