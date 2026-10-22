@@ -33,6 +33,7 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
   const isCost = finding.category === 'cost';
   const isBlocked = finding.status === 'blocked' || finding.isSafetyBlocked;
   const isResolved = finding.status === 'resolved';
+  const isLive = finding.execution_mode === 'live' || finding.executionMode === 'live' || finding.id.startsWith('live-');
 
   return (
     <AnimatePresence>
@@ -176,13 +177,15 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
               </div>
             </div>
 
-            {/* Simulated Telemetry Evidence */}
+            {/* Evidence & Telemetry Section */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Activity size={14} color="var(--apple-blue)" /> Simulated Telemetry Evidence
+                  <Activity size={14} color="var(--apple-blue)" /> {isLive ? 'AWS Verification Evidence & Pricing' : 'Simulated Telemetry Evidence'}
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Deterministic Sandbox Feed</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  {isLive ? 'Direct AWS API & Regional Pricing Matrix' : 'Deterministic Sandbox Feed'}
+                </span>
               </div>
 
               {/* Evidence Bullets */}
@@ -197,11 +200,12 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                 </div>
               </div>
 
-              {/* Dynamic Telemetry Graph */}
-              <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 12px 8px' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, paddingLeft: 8 }}>
-                  Metric: {finding.telemetryMetricName} ({finding.telemetryUnit})
-                </div>
+              {/* Dynamic Telemetry Graph: Only if real telemetry points exist or in demo mode */}
+              {finding.telemetryData && finding.telemetryData.length > 0 && (!isLive || finding.telemetryData.some(p => p.value > 0)) && (
+                <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 12px 8px' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, paddingLeft: 8 }}>
+                    Metric: {finding.telemetryMetricName} ({finding.telemetryUnit})
+                  </div>
                 <div style={{ height: 160 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={finding.telemetryData}>

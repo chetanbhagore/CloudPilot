@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from app.schemas import FindingModel, ResourceModel, SafetyCheck, TelemetryPoint
 from app.services.aws_sts import get_ec2_client
 from app.services.safety_passport import build_safety_passport
+from app.services.cost_engine import calculate_ebs_cost_estimate
 
 try:
     from botocore.exceptions import ClientError, EndpointConnectionError
@@ -71,8 +72,17 @@ def scan_account_live(
                     create_time = v.get("CreateTime")
                     age_str = f"Created {create_time.strftime('%Y-%m-%d')}" if create_time else "Unattached"
                     
-                    # AWS Regional baseline pricing estimate ($0.08/GB for gp3 in ap-south-1)
-                    monthly_cost = round(size_gb * 0.08, 2)
+                    # Defensible AWS Regional baseline pricing estimate
+                    cost_est = calculate_ebs_cost_estimate(
+                        region=r,
+                        volume_type=vol_type,
+                        size_gb=size_gb,
+                        iops=v.get("Iops"),
+                        throughput_mbps=v.get("Throughput"),
+                        resource_id=vol_id,
+                        status="open"
+                    )
+                    monthly_cost = cost_est.estimated_monthly_cost
                     
                     vol_finding = FindingModel(
                         id=f"live-ebs-{vol_id}",
@@ -98,7 +108,8 @@ def scan_account_live(
                                 f"Volume Status: {v.get('status', 'available')} (0 active attachments)",
                                 f"Volume Size & Type: {size_gb} GiB {vol_type}",
                                 f"Availability Zone: {v.get('AvailabilityZone', r)}",
-                                f"Calculated Run-Rate: ~${monthly_cost}/month ($0.08/GiB-mo gp3 standard)"
+                                f"Calculated Run-Rate: ~${monthly_cost}/month ({cost_est.formula} via {cost_est.pricing_source})",
+                                f"Savings Classification: {cost_est.savings_stage} (Confidence: {cost_est.confidence_level})"
                             ],
                             estimatedMonthlyCost=monthly_cost,
                             estimatedSavings=monthly_cost,
