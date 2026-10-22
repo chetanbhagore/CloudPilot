@@ -1,7 +1,15 @@
 import logging
+import secrets
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Query
-from app.schemas import AccountConnectRequest, AccountConnectResponse, ConnectionStatus, ExecutionMode
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.schemas import (
+    AccountConnectRequest,
+    AccountConnectResponse,
+    ConnectionStatus,
+    ExecutionMode,
+    AuthenticatedUser
+)
 from app.services.aws_sts import (
     assume_role,
     generate_demo_sts_session,
@@ -11,6 +19,7 @@ from app.services.aws_sts import (
     STSAccountMismatchError,
     STSValidationError
 )
+from app.services.auth import get_current_user
 
 logger = logging.getLogger("cloudpilot.accounts")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -137,14 +146,41 @@ def list_accounts(mode: Optional[str] = Query(None, description="Filter accounts
         accounts = [a for a in accounts if a.get("execution_mode") == mode_str]
     return accounts
 
+@router.get("/external-id")
+def generate_external_id(
+    current_user: Optional[AuthenticatedUser] = Depends(get_current_user)
+):
+    """
+    Generates a cryptographically unpredictable tenant ExternalId for sts:AssumeRole.
+    """
+    user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    org_id = user.organization_id if user and not user.is_demo else "acme-tenant"
+    rand_entropy = secrets.token_hex(16)
+    return {
+        "external_id": f"cp-{org_id}-{rand_entropy}",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "entropy_bits": 128
+    }
+
 @router.delete("/{account_id}")
 def disconnect_account(account_id: str, mode: str = "live"):
     """
     Disconnects and removes an AWS account from the active registry.
+    Returns complete AWS CLI and CloudFormation revocation procedure.
     """
     sanitized_id = account_id.replace("-", "").strip()
     key = f"{mode}:{sanitized_id}"
     if key in _connected_accounts:
         del _connected_accounts[key]
-        return {"success": True, "message": f"Account {sanitized_id} disconnected."}
+        return {
+            "success": True,
+            "account_id": sanitized_id,
+            "message": f"Account {sanitized_id} successfully disconnected from CloudPilot registry.",
+            "revocation_procedure": {
+                "step1": "Account connection removed and credentials evicted from memory.",
+                "step2_aws_cli": "To revoke all trust on AWS, delete the CloudFormation stack:",
+                "cli_command": "aws cloudformation delete-stack --stack-name CloudPilotAuditStack",
+                "step3_manual": "Or delete IAM roles 'CloudPilotAuditRole' and 'CloudPilotRemediationRole' via AWS IAM Console."
+            }
+        }
     raise HTTPException(status_code=404, detail=f"Account {account_id} not found in {mode} mode.")

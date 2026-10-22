@@ -1,17 +1,20 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  CloudPilot Isolated Two-Role Architecture: Read-Only Discovery (Role 1)
-  and Strictly Scoped Atomic Remediation (Role 2) with ExternalId Trust.
+  CloudPilot Hardened Two-Role IAM Architecture: Read-Only Discovery (Role 1)
+  and Strictly Scoped Atomic Remediation (Role 2) with Mandatory ExternalId Trust.
 
 Parameters:
   OperatorAccountId:
     Type: String
-    Default: "123456789012"
-    Description: AWS Account ID hosting CloudPilot platform services.
+    Default: "999888777666"
+    AllowedPattern: "^[0-9]{12}$"
+    Description: AWS Account ID hosting CloudPilot platform operator services.
   ExternalId:
     Type: String
-    Default: "cp-tenant-9042-demo"
-    Description: Unique tenant ExternalId for sts:AssumeRole confused-deputy defense.
+    MinLength: 16
+    MaxLength: 128
+    AllowedPattern: "^[a-zA-Z0-9_-]+$"
+    Description: Unpredictable tenant ExternalId for sts:AssumeRole confused-deputy defense.
 
 Resources:
   # ── Role 1: Strictly Read-Only Discovery ──────────────────────────────────────
@@ -23,9 +26,10 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Sid: EnforceOperatorPrincipalWithExternalId
+            Effect: Allow
             Principal:
-              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:root"
+              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:role/CloudPilotOperatorRole"
             Action: "sts:AssumeRole"
             Condition:
               StringEquals:
@@ -48,27 +52,31 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Sid: EnforceOperatorPrincipalWithExternalIdRemediation
+            Effect: Allow
             Principal:
-              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:root"
+              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:role/CloudPilotOperatorRole"
             Action: "sts:AssumeRole"
             Condition:
               StringEquals:
                 "sts:ExternalId": !Ref ExternalId
       Policies:
-        - PolicyName: AtomicRemediationWhitelist
+        - PolicyName: AtomicRemediationPermissions
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: WhitelistedAtomicEC2Remediations
+              # AWS EC2 Describe APIs require Resource: "*" because AWS does not support resource-level ARNs for Describe
+              - Sid: DescribeSecurityGroupsVerification
+                Effect: Allow
+                Action:
+                  - "ec2:DescribeSecurityGroups"
+                Resource: "*"
+              # Atomic mutation strictly scoped to Security Groups in the customer's own AWS account
+              - Sid: ScopedRevokeSecurityGroupIngress
                 Effect: Allow
                 Action:
                   - "ec2:RevokeSecurityGroupIngress"
-                  - "ec2:StopInstances"
-                  - "ec2:DescribeSecurityGroups"
-                  - "ec2:DescribeInstances"
-                  - "ec2:DescribeVolumes"
-                Resource: "*"
+                Resource: !Sub "arn:aws:ec2:*:${AWS::AccountId}:security-group/*"
       Tags:
         - Key: ManagedBy
           Value: CloudPilot

@@ -10,13 +10,15 @@ import { type ScenarioType } from '../context/contextDefinition';
 import { sound } from '../utils/soundEngine';
 
 const CF_READ_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudPilot Illustrative Read-Only Discovery Role (Role 1 of 2)
+Description: CloudPilot Hardened Read-Only Discovery Role (Role 1 of 2)
 
 Parameters:
   ExternalId:
     Type: String
-    Default: "cp-tenant-9042-demo"
-    Description: Unique customer tenant identifier for STS AssumeRole trust condition
+    MinLength: 16
+    MaxLength: 128
+    AllowedPattern: "^[a-zA-Z0-9_-]+$"
+    Description: Unique unpredictable customer tenant identifier for STS AssumeRole trust condition
 
 Resources:
   CloudPilotDiscoveryRole:
@@ -26,9 +28,10 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Sid: EnforceOperatorPrincipalWithExternalId
+            Effect: Allow
             Principal:
-              AWS: "arn:aws:iam::999888777666:root"
+              AWS: "arn:aws:iam::999888777666:role/CloudPilotOperatorRole"
             Action: sts:AssumeRole
             Condition:
               StringEquals:
@@ -39,7 +42,15 @@ Resources:
 `;
 
 const CF_REMEDIATION_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudPilot Illustrative Scoped Remediation Execution Role (Role 2 of 2)
+Description: CloudPilot Hardened Scoped Remediation Execution Role (Role 2 of 2)
+
+Parameters:
+  ExternalId:
+    Type: String
+    MinLength: 16
+    MaxLength: 128
+    AllowedPattern: "^[a-zA-Z0-9_-]+$"
+    Description: Unique customer tenant ExternalId matching Role 1 trust condition
 
 Resources:
   CloudPilotRemediationRole:
@@ -49,24 +60,31 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Sid: EnforceOperatorPrincipalWithExternalIdRemediation
+            Effect: Allow
             Principal:
-              AWS: "arn:aws:iam::999888777666:root"
+              AWS: "arn:aws:iam::999888777666:role/CloudPilotOperatorRole"
             Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
       Policies:
-        - PolicyName: AtomicRemediationWhitelist
+        - PolicyName: AtomicRemediationPermissions
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
+              # AWS Describe APIs require Resource: "*" because AWS does not support resource-level ARNs for Describe
+              - Sid: DescribeSecurityGroupsVerification
+                Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                Resource: "*"
+              # Atomic mutation strictly scoped to Security Groups in customer's own AWS account
+              - Sid: ScopedRevokeSecurityGroupIngress
+                Effect: Allow
                 Action:
                   - ec2:RevokeSecurityGroupIngress
-                  - ec2:StopInstances
-                  - ec2:DeleteVolume
-                  - ec2:ReleaseAddress
-                  - ec2:ModifyVolume
-                  - budgets:CreateBudget
-                Resource: "*"
+                Resource: !Sub "arn:aws:ec2:*:\${AWS::AccountId}:security-group/*"
 `;
 
 export default function Connect() {
