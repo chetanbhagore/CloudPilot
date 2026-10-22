@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudPilot Isolated Two-Role Architecture: Read-Only Discovery (Role 1)
+  and Strictly Scoped Atomic Remediation (Role 2) with ExternalId Trust.
+
+Parameters:
+  OperatorAccountId:
+    Type: String
+    Default: "123456789012"
+    Description: AWS Account ID hosting CloudPilot platform services.
+  ExternalId:
+    Type: String
+    Default: "cp-tenant-9042-demo"
+    Description: Unique tenant ExternalId for sts:AssumeRole confused-deputy defense.
+
+Resources:
+  # ── Role 1: Strictly Read-Only Discovery ──────────────────────────────────────
+  CloudPilotAuditRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudPilotAuditRole
+      Description: Read-only role used by CloudPilot for continuous cost & security discovery.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:root"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/SecurityAudit"
+        - "arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"
+      Tags:
+        - Key: ManagedBy
+          Value: CloudPilot
+        - Key: Scope
+          Value: AuditReadOnly
+
+  # ── Role 2: Narrow Scoped Remediation (Assumed ONLY on explicit approval) ──────
+  CloudPilotRemediationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudPilotRemediationRole
+      Description: Scoped execution role assumed exclusively upon human Slide-to-Approve authorization.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${OperatorAccountId}:root"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      Policies:
+        - PolicyName: AtomicRemediationWhitelist
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: WhitelistedAtomicEC2Remediations
+                Effect: Allow
+                Action:
+                  - "ec2:RevokeSecurityGroupIngress"
+                  - "ec2:StopInstances"
+                  - "ec2:DescribeSecurityGroups"
+                  - "ec2:DescribeInstances"
+                  - "ec2:DescribeVolumes"
+                Resource: "*"
+      Tags:
+        - Key: ManagedBy
+          Value: CloudPilot
+        - Key: Scope
+          Value: HumanApprovedRemediation
+
+Outputs:
+  AuditRoleArn:
+    Description: ARN of the read-only discovery role
+    Value: !GetAtt CloudPilotAuditRole.Arn
+    Export:
+      Name: CloudPilotAuditRoleArn
+
+  RemediationRoleArn:
+    Description: ARN of the human-authorized remediation role
+    Value: !GetAtt CloudPilotRemediationRole.Arn
+    Export:
+      Name: CloudPilotRemediationRoleArn
+
+  ExternalIdUsed:
+    Description: ExternalId required in STS AssumeRole requests
+    Value: !Ref ExternalId
