@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, XCircle, Clock, ShieldCheck, Copy,
-  Check, ArrowRight, Terminal
+  Check, ArrowRight, Terminal, AlertTriangle, ShieldAlert, Info
 } from 'lucide-react';
 import { type SafetyPassport } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
@@ -17,6 +17,7 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
   const [copiedRollback, setCopiedRollback] = useState(false);
   const allPassed = passport.preconditions.every((p) => p.passed);
   const approved = passport.approvalStatus === 'approved';
+  const isBlocked = passport.isSafetyBlocked || !allPassed || passport.approvalStatus === 'blocked';
   const hasResult = !!passport.executionResult;
 
   const copyRollback = () => {
@@ -48,7 +49,7 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
               CloudPilot Safety Passport™
             </div>
             <div style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
-              ID: SP-2026-9042 • SHA-256 Verified Preconditions
+              Target: {passport.resourceIdentity.id} • Verified Pre-Flight State
             </div>
           </div>
         </div>
@@ -56,17 +57,46 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
         <div style={{ zIndex: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
           {approved ? (
             <span className="badge badge-success" style={{ padding: '6px 14px', fontSize: 12 }}>
-              <CheckCircle2 size={13} /> APPROVED & SIGNED
+              <CheckCircle2 size={13} /> APPROVED & LIVE VERIFICATION CONFIRMED
+            </span>
+          ) : isBlocked ? (
+            <span className="badge badge-high" style={{ padding: '6px 14px', fontSize: 12, background: 'rgba(255,159,10,0.22)', color: '#FFB340' }}>
+              <ShieldAlert size={13} /> BLOCKED BY SAFETY CHECK
             </span>
           ) : (
-            <span className="badge badge-high" style={{ padding: '6px 14px', fontSize: 12, background: 'rgba(255,159,10,0.18)', color: '#FFB340' }}>
-              <Clock size={13} /> PENDING HUMAN SIGN-OFF
+            <span className="badge badge-info" style={{ padding: '6px 14px', fontSize: 12, background: 'rgba(0,113,227,0.18)', color: '#64D2FF' }}>
+              <Clock size={13} /> READY FOR HUMAN REVIEW
             </span>
           )}
         </div>
       </div>
 
       <div className="passport-body">
+        {/* Blocker Callout if action is unsafe */}
+        {isBlocked && (
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 12,
+              background: 'rgba(255, 159, 10, 0.08)',
+              border: '1px solid rgba(255, 159, 10, 0.35)',
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start'
+            }}
+          >
+            <AlertTriangle size={20} color="var(--apple-amber-dark)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--apple-amber-dark)', marginBottom: 4 }}>
+                Execution Blocked by Pre-Flight Safety Engine
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                {passport.blockedReason || 'One or more automated pre-flight checks failed. CloudPilot has blocked this action to protect dependent services or prevent account lockout.'}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* §1 — Finding Evidence & Target Identity */}
         <div className="passport-section-card">
           <div className="passport-section-label">
@@ -121,12 +151,12 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
             Exact Atomic Operation (Deterministic Payload)
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
-            Only this specific AWS SDK call will be permitted. No wildcards, no cascade deletes.
+            Only this specific AWS API call will be executed under CloudPilotRemediationRole upon approval. No wildcard permissions or cascade modifications.
           </div>
 
           <div className="code-block">
             <div style={{ color: 'var(--apple-blue)', fontWeight: 600, marginBottom: 6 }}>
-              // AWS API Call Definition
+              // AWS SDK Call Definition
             </div>
             <div style={{ fontWeight: 600 }}>{passport.operation} (</div>
             <div style={{ paddingLeft: 18 }}>
@@ -144,12 +174,12 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
         <div className="passport-section-card">
           <div className="passport-section-label">
             <span className="passport-section-badge">3</span>
-            Safety Preconditions (5/5 Automated Pre-Flight Checks)
+            Safety Preconditions ({passport.preconditions.filter(p => p.passed).length}/{passport.preconditions.length} Pre-Flight Checks Passed)
             <span style={{ marginLeft: 'auto' }}>
               {allPassed ? (
-                <span className="badge badge-success">All Checks Passed</span>
+                <span className="badge badge-success">All Preconditions Met</span>
               ) : (
-                <span className="badge badge-critical">Safety Failure</span>
+                <span className="badge badge-critical">Safety Failure Detected</span>
               )}
             </span>
           </div>
@@ -160,9 +190,9 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
                 key={i}
                 style={{
                   padding: 12,
-                  background: '#FFFFFF',
+                  background: p.passed ? '#FFFFFF' : 'rgba(255, 59, 48, 0.05)',
                   borderRadius: 10,
-                  border: '1px solid var(--border-subtle)',
+                  border: `1px solid ${p.passed ? 'var(--border-subtle)' : 'rgba(255, 59, 48, 0.3)'}`,
                   display: 'flex',
                   gap: 10,
                   alignItems: 'flex-start'
@@ -174,7 +204,7 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
                   <XCircle size={16} color="var(--apple-crimson)" style={{ flexShrink: 0, marginTop: 2 }} />
                 )}
                 <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: p.passed ? 'var(--text-primary)' : 'var(--apple-crimson-dark)' }}>
                     {p.label}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>
@@ -203,31 +233,44 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
           </div>
         </div>
 
-        {/* §5 — Guaranteed Recovery / Rollback Guidance */}
+        {/* §5 — Recovery Guidance & Honest Limitations */}
         <div className="passport-section-card" style={{ background: '#FFFDF9', borderColor: 'rgba(255, 159, 10, 0.25)' }}>
           <div className="passport-section-label" style={{ color: 'var(--apple-amber-dark)' }}>
             <span className="passport-section-badge" style={{ background: 'var(--apple-amber-dark)' }}>5</span>
-            Deterministic Rollback Guarantee
+            Recovery Guidance & Reversible Commands
             <button
               onClick={copyRollback}
               className="btn btn-secondary btn-sm"
               style={{ marginLeft: 'auto', gap: 6, fontSize: 11.5 }}
             >
               {copiedRollback ? <Check size={12} color="var(--apple-emerald)" /> : <Copy size={12} />}
-              {copiedRollback ? 'Copied' : 'Copy Rollback Command'}
+              {copiedRollback ? 'Copied' : 'Copy Recovery Command'}
             </button>
           </div>
 
-          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
-            If you ever need to restore previous behavior, CloudPilot provides this exact reversible CLI command:
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+            If you need to restore previous behavior, CloudPilot provides this explicit CLI command:
           </div>
 
-          <div className="code-block" style={{ background: '#FFFFFF', borderColor: 'rgba(255, 159, 10, 0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontWeight: 600 }}>
-              <Terminal size={14} color="var(--apple-amber-dark)" />
-              <span>aws ec2 authorize-security-group-ingress --group-id {passport.resourceIdentity.id} --protocol tcp --port 22 --cidr &lt;YOUR_IP&gt;/32</span>
+          <div className="code-block" style={{ background: '#FFFFFF', borderColor: 'rgba(255, 159, 10, 0.2)', marginBottom: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {passport.recoveryGuidance.map((cmd, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontSize: 12 }}>
+                  {i === 0 && <Terminal size={14} color="var(--apple-amber-dark)" />}
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{cmd}</span>
+                </div>
+              ))}
             </div>
           </div>
+
+          {passport.recoveryLimitations && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <Info size={14} color="var(--apple-amber-dark)" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <strong>Recovery Limitation:</strong> {passport.recoveryLimitations}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* §6 — Execution Result (If executed) */}
@@ -243,24 +286,18 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 6 }}>
                   BEFORE EXECUTION:
                 </div>
-                {Object.entries(passport.executionResult.beforeState).map(([rule, state]) => (
-                  <div key={rule} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{rule}</span>
-                    <span style={{ fontWeight: 600, color: 'var(--apple-crimson)' }}>{state}</span>
-                  </div>
-                ))}
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                  {passport.executionResult.beforeState}
+                </div>
               </div>
 
               <div style={{ background: '#FFFFFF', padding: 12, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 6 }}>
                   VERIFIED AFTER EXECUTION:
                 </div>
-                {Object.entries(passport.executionResult.afterState).map(([rule, state]) => (
-                  <div key={rule} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{rule}</span>
-                    <span style={{ fontWeight: 600, color: 'var(--apple-emerald-dark)' }}>{state}</span>
-                  </div>
-                ))}
+                <div style={{ fontSize: 12, color: 'var(--apple-emerald-dark)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                  {passport.executionResult.afterState}
+                </div>
               </div>
             </div>
 
@@ -274,15 +311,24 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
 
         {/* Action Call to Action */}
         {showApproveButton && !approved && onApprove && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: 12.5, color: isBlocked ? 'var(--apple-crimson-dark)' : 'var(--text-secondary)' }}>
+              {isBlocked
+                ? 'Authorization is disabled because automated safety preconditions were not met.'
+                : 'All automated preconditions passed. Proceed to explicit authorization.'}
+            </div>
+
             <button
               onClick={() => {
+                if (isBlocked) return;
                 sound.playClick();
                 onApprove();
               }}
+              disabled={isBlocked}
               className="btn btn-primary btn-lg"
+              style={{ opacity: isBlocked ? 0.4 : 1, cursor: isBlocked ? 'not-allowed' : 'pointer' }}
             >
-              <span>Proceed to Authorization</span>
+              <span>{isBlocked ? 'Blocked by Safety Engine' : 'Proceed to Authorization'}</span>
               <ArrowRight size={16} />
             </button>
           </div>

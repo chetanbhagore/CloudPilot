@@ -1,26 +1,38 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Search, ShieldCheck, CheckSquare,
-  BookOpen, Cloud, Zap
+  BookOpen, Cloud, Zap, Settings, LogOut
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
+import { useAuth } from '../context/useAuth';
 import { sound } from '../utils/soundEngine';
 
 export default function Sidebar() {
-  const { activeScenario, findings, isRemediated } = useDemo();
-  const isStudent = activeScenario === 'student';
+  const navigate = useNavigate();
+  const { accountConfig, findings, isRemediated, resolvedCount } = useDemo();
+  const { user, logout } = useAuth();
 
-  const navItems = [
+  const operationsNav = [
     { to: '/',          icon: LayoutDashboard, label: 'Overview',        badge: null, badgeWarn: false },
-    { to: '/connect',   icon: Cloud,           label: 'Connect Account', badge: null, badgeWarn: false },
     { to: '/discover',  icon: Search,          label: 'Discover',        badge: String(findings.length), badgeWarn: false },
-    { to: '/passport',  icon: ShieldCheck,     label: 'Safety Passport', badge: '1', badgeWarn: false },
-    { to: '/approve',   icon: CheckSquare,     label: 'Approve & Act',   badge: isRemediated ? 'Done ✓' : 'Action', badgeWarn: !isRemediated },
-    { to: '/audit',     icon: BookOpen,        label: 'Audit Trail',     badge: isRemediated ? '1 Record' : null, badgeWarn: false },
+    { to: '/passport',  icon: ShieldCheck,     label: 'Safety Passport', badge: 'Active', badgeWarn: false },
+    { to: '/approve',   icon: CheckSquare,     label: 'Approve & Act',   badge: isRemediated ? `${resolvedCount} Done ✓` : '1 Ready', badgeWarn: !isRemediated },
+    { to: '/audit',     icon: BookOpen,        label: 'Audit Trail',     badge: resolvedCount > 0 ? `${resolvedCount} Records` : null, badgeWarn: false },
   ];
 
+  const governanceNav = [
+    { to: '/connect',   icon: Cloud,           label: 'AWS Accounts',    badge: '2 Active', badgeWarn: false },
+    { to: '/settings',  icon: Settings,        label: 'Settings & Team', badge: null, badgeWarn: false },
+  ];
+
+  const handleLogout = () => {
+    sound.playSnap();
+    logout();
+    navigate('/login');
+  };
+
   return (
-    <nav className="layout-sidebar">
+    <nav className="layout-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Brand */}
       <NavLink
         to="/"
@@ -32,13 +44,13 @@ export default function Sidebar() {
         </div>
         <div>
           <div className="sidebar-brand-name">CloudPilot</div>
-          <div className="sidebar-brand-tag">Safe Cloud Ops</div>
+          <div className="sidebar-brand-tag">Cloud Operations Platform</div>
         </div>
       </NavLink>
 
+      {/* Main Operations Navigation */}
       <div className="nav-section-title">Operations</div>
-
-      {navItems.map(({ to, icon: Icon, label, badge, badgeWarn }) => (
+      {operationsNav.map(({ to, icon: Icon, label, badge, badgeWarn }) => (
         <NavLink
           key={to}
           to={to}
@@ -58,20 +70,87 @@ export default function Sidebar() {
         </NavLink>
       ))}
 
-      {/* Account Info Pill */}
-      <div className="sidebar-account-card">
+      {/* Governance & Configuration */}
+      <div className="nav-section-title" style={{ marginTop: 20 }}>Governance</div>
+      {governanceNav.map(({ to, icon: Icon, label, badge, badgeWarn }) => (
+        <NavLink
+          key={to}
+          to={to}
+          onClick={() => sound.playClick()}
+          className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Icon size={16} />
+            <span>{label}</span>
+          </div>
+          {badge && (
+            <span className={`sidebar-badge${badgeWarn ? ' highlight' : ''}`}>
+              {badge}
+            </span>
+          )}
+        </NavLink>
+      ))}
+
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
+
+      {/* Connected Account Mini-Card */}
+      <div className="sidebar-account-card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <div className="account-dot" />
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            {isStudent ? 'Student ML Research' : 'FinTech MVP Dev'}
+            {accountConfig.alias}
           </div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-          {isStudent ? 'acct-987654321098 • us-east-1' : 'acct-123456789012 • ap-south-1'}
+          {accountConfig.accountId} • {accountConfig.region}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--apple-emerald-dark)', marginTop: 6, fontWeight: 500 }}>
-          ✓ Two-Role IAM Model Active
+      </div>
+
+      {/* Identified User Footer Card */}
+      <div style={{
+        padding: '12px 14px',
+        borderRadius: 12,
+        background: 'var(--surface-secondary)',
+        border: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            background: 'var(--apple-blue)',
+            color: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 700,
+            flexShrink: 0
+          }}>
+            {user.name.split(' ').map(n => n[0]).join('')}
+          </div>
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+              {user.name}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+              {user.role}
+            </div>
+          </div>
         </div>
+        <button
+          onClick={handleLogout}
+          className="btn btn-ghost btn-sm"
+          style={{ width: 28, height: 28, padding: 0, color: 'var(--text-tertiary)' }}
+          title="Sign Out"
+          aria-label="Sign Out"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </nav>
   );

@@ -1,34 +1,57 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, Shield, Download,
-  Check, RotateCcw, X, Award
+  Check, X, Award, Search,
+  Fingerprint, Info, Printer
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useDemo } from '../context/useDemo';
+import { useAuth } from '../context/useAuth';
+import { type AuditRecord } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
 
 export default function AuditTrail() {
-  const navigate = useNavigate();
-  const { auditRecords, activeHash, resetDemo, exportAuditCSV } = useDemo();
+  const { auditRecords, activeHash, exportAuditCSV, activeScenario } = useDemo();
+  const { user } = useAuth();
   const [showCertificate, setShowCertificate] = useState(false);
+  const [inspectRecord, setInspectRecord] = useState<AuditRecord | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [exported, setExported] = useState(false);
 
-  const displayRecords = auditRecords.length > 0 ? auditRecords : [
-    {
-      id: 'audit-demo-initial',
-      findingId: 'finding-001',
-      action: 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
-      resource: 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
-      authorizedBy: 'demo@cloudpilot.dev',
-      authorizedAt: '2026-10-21T15:04:32Z',
-      executedAt: '2026-10-21T15:04:35Z',
-      awsResponse: '200 OK — RequestId: req-aws-9042b-fintech-mumbai',
-      outcome: 'success' as const,
-      beforeState: 'TCP:22 from 0.0.0.0/0: PRESENT',
-      afterState: 'TCP:22 from 0.0.0.0/0: REMOVED (verified)'
-    }
-  ];
+  const displayRecords = useMemo(() => {
+    const list = auditRecords.length > 0 ? auditRecords : [
+      {
+        id: 'audit-rec-0914',
+        findingId: 'finding-001',
+        scenario: activeScenario === 'student' ? 'Research & ML Lab Sandbox' : 'Production Core (FinTech)',
+        action: activeScenario === 'student'
+          ? 'ec2:StopInstances — Stop idle GPU instance i-0gpu998877'
+          : 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
+        resource: activeScenario === 'student'
+          ? 'i-0gpu998877 (pytorch-research-vm, us-east-1)'
+          : 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
+        authorizedBy: user.email,
+        authorizedAt: '2026-10-21T15:04:32Z',
+        executedAt: '2026-10-21T15:04:35Z',
+        awsResponse: '200 OK — RequestId: req-aws-live-audit-ok',
+        outcome: 'success' as const,
+        beforeState: activeScenario === 'student' ? 'i-0gpu998877 state: RUNNING ($3.06/hr)' : 'TCP:22 from 0.0.0.0/0: PRESENT',
+        afterState: activeScenario === 'student' ? 'i-0gpu998877 state: STOPPED ($0.00/hr ✓)' : 'TCP:22 from 0.0.0.0/0: REMOVED (verified ✓)',
+        canonicalPayload: `finding-001|sg-0a1b2c3d4e5f|2026-10-21T15:04:32Z|req-aws-live-audit-ok|${user.email}`,
+        integrityHash: activeHash
+      }
+    ];
+
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase().trim();
+    return list.filter((r) =>
+      r.id.toLowerCase().includes(q) ||
+      r.findingId.toLowerCase().includes(q) ||
+      r.action.toLowerCase().includes(q) ||
+      r.resource.toLowerCase().includes(q) ||
+      r.scenario.toLowerCase().includes(q)
+    );
+  }, [auditRecords, activeScenario, activeHash, searchQuery, user.email]);
 
   const handleExport = () => {
     sound.playSuccess();
@@ -37,26 +60,46 @@ export default function AuditTrail() {
     setTimeout(() => setExported(false), 2400);
   };
 
-  const handleRestart = () => {
-    sound.playSnap();
-    resetDemo();
-    navigate('/connect');
-  };
-
   return (
     <div className="page-container">
+      {/* ── Cryptographic Ledger Status Banner ── */}
+      <div
+        className="apple-card"
+        style={{
+          padding: '12px 18px',
+          marginBottom: 24,
+          background: 'rgba(48, 209, 88, 0.08)',
+          borderColor: 'rgba(48, 209, 88, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Shield size={16} color="var(--apple-emerald-dark)" />
+          <div style={{ fontSize: 13, color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>
+            CRYPTOGRAPHIC AUDIT LEDGER — TAMPER-EVIDENT RECORD INTEGRITY
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          Every authorized operation is canonicalized and hashed with SHA-256 for non-repudiation and SOC 2 compliance.
+        </div>
+      </div>
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span className="badge badge-info">STAGE 5 OF 5</span>
-            <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Immutable Audit Ledger</span>
+            <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Cryptographic Audit Ledger</span>
           </div>
           <h1 className="display-title" style={{ marginBottom: 6 }}>
             Audit Trail & Proof of Outcome
           </h1>
           <p className="body-lead" style={{ maxWidth: 740 }}>
-            Every action approved in CloudPilot generates an immutable, cryptographically verifiable audit record. Complete proof of before-state, AWS response, and verified after-state.
+            Every action approved in CloudPilot appends a verifiable receipt with before-state, AWS response, verified outcome, and native WebCrypto SHA-256 hash.
           </p>
         </div>
 
@@ -69,7 +112,7 @@ export default function AuditTrail() {
             className="btn btn-secondary"
           >
             <Award size={15} color="var(--apple-amber-dark)" />
-            <span>View Verification Certificate</span>
+            <span>View Attestation Certificate</span>
           </button>
 
           <button
@@ -87,7 +130,7 @@ export default function AuditTrail() {
       <div className="metric-grid" style={{ marginBottom: 28 }}>
         <div className="metric-card">
           <div className="metric-header">
-            <span className="metric-label">Total Actions Authorized</span>
+            <span className="metric-label">Actions Authorized</span>
             <Shield size={16} color="var(--apple-blue)" />
           </div>
           <div className="metric-value">{displayRecords.length}</div>
@@ -111,38 +154,71 @@ export default function AuditTrail() {
 
         <div className="metric-card">
           <div className="metric-header">
-            <span className="metric-label">Unauthorized Executions</span>
+            <span className="metric-label">Unauthorized Alterations</span>
             <Shield size={16} color="var(--apple-blue)" />
           </div>
           <div className="metric-value" style={{ color: 'var(--apple-blue)' }}>
             0
           </div>
           <div className="metric-footer" style={{ color: 'var(--apple-emerald-dark)' }}>
-            Guaranteed by design
+            Protected by Human Gate
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-header">
-            <span className="metric-label">Computed SHA-256 Ledger Hash</span>
-            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>HASH</span>
+            <span className="metric-label">Latest Ledger SHA-256</span>
+            <Fingerprint size={16} color="var(--apple-blue)" />
           </div>
-          <div className="metric-value" style={{ fontSize: '1.05rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
-            {activeHash.slice(0, 16)}…{activeHash.slice(-8)}
+          <div className="metric-value" style={{ fontSize: '0.98rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+            {activeHash.slice(0, 14)}…{activeHash.slice(-8)}
           </div>
           <div className="metric-footer" style={{ color: 'var(--apple-emerald-dark)' }}>
-            SHA-256 WebCrypto Verified
+            WebCrypto Verified
           </div>
         </div>
       </div>
 
-      {/* Audit Log Entries */}
+      {/* Search Bar */}
+      <div style={{ marginBottom: 20, position: 'relative', maxWidth: 420 }}>
+        <Search size={15} color="var(--text-tertiary)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter audit records by ID, action, or resource..."
+          style={{
+            width: '100%',
+            padding: '8px 12px 8px 36px',
+            borderRadius: 8,
+            border: '1px solid var(--border-medium)',
+            fontSize: 13,
+            background: '#FFFFFF'
+          }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="btn btn-ghost btn-sm"
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 4, width: 22, height: 22, borderRadius: '50%' }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Audit Log Entries Table / Cards */}
       <div className="apple-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-            Historical Remediation Records
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+              Historical Remediation Ledger
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+              Canonical records hashed using browser WebCrypto API
+            </div>
           </div>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{displayRecords.length} verified record(s)</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{displayRecords.length} record(s)</span>
         </div>
 
         {displayRecords.map((r, idx) => (
@@ -153,7 +229,7 @@ export default function AuditTrail() {
               borderBottom: idx < displayRecords.length - 1 ? '1px solid var(--border-subtle)' : 'none'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
                   <CheckCircle2 size={18} color="var(--apple-emerald-dark)" />
@@ -162,15 +238,26 @@ export default function AuditTrail() {
                   </span>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                  Target: {r.resource}
+                  Target: {r.resource} • {r.scenario}
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="badge badge-success">✓ 200 OK SUCCESS</span>
+                <span className="badge badge-success">✓ 200 OK VERIFIED</span>
                 <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                   {new Date(r.executedAt).toLocaleTimeString()}
                 </span>
+                <button
+                  onClick={() => {
+                    sound.playClick();
+                    setInspectRecord(r);
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ gap: 6, fontSize: 11.5 }}
+                >
+                  <Fingerprint size={13} />
+                  <span>Inspect Hash Payload</span>
+                </button>
               </div>
             </div>
 
@@ -183,7 +270,7 @@ export default function AuditTrail() {
               </div>
 
               <div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>AWS Verification Response</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>AWS Response</div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{r.awsResponse}</div>
               </div>
 
@@ -197,17 +284,75 @@ export default function AuditTrail() {
         ))}
       </div>
 
-      {/* Demo Replay Callout */}
+      {/* Export Compliance Archive Callout */}
       <div style={{ marginTop: 32, textAlign: 'center' }}>
         <button
-          onClick={handleRestart}
+          onClick={handleExport}
           className="btn btn-secondary"
           style={{ padding: '12px 24px', fontSize: 14 }}
         >
-          <RotateCcw size={15} />
-          <span>Reset Demo State & Test Alternative Scenario</span>
+          <Download size={15} />
+          <span>Download Signed Audit Package (CSV + SHA-256 Hashes)</span>
         </button>
       </div>
+
+      {/* Inspect Hash Canonical Payload Modal */}
+      <AnimatePresence>
+        {inspectRecord && (
+          <div className="drawer-backdrop" onClick={() => setInspectRecord(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="apple-card"
+              style={{
+                maxWidth: 640,
+                margin: '80px auto',
+                padding: 28,
+                background: '#FFFFFF',
+                boxShadow: 'var(--shadow-floating)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Fingerprint size={20} color="var(--apple-blue)" />
+                  <h3 style={{ fontSize: 17, fontWeight: 700 }}>Cryptographic Integrity Payload</h3>
+                </div>
+                <button
+                  onClick={() => setInspectRecord(null)}
+                  className="btn btn-ghost btn-sm"
+                  style={{ borderRadius: '50%', width: 28, height: 28, padding: 0 }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 14 }}>
+                This SHA-256 fingerprint demonstrates client-side tamper-evidence. The hash was calculated over the deterministic canonical string below:
+              </div>
+
+              <div className="code-block" style={{ marginBottom: 14, fontSize: 12, wordBreak: 'break-all' }}>
+                <div style={{ color: 'var(--apple-blue)', fontWeight: 600, marginBottom: 4 }}>// Canonical Raw Payload</div>
+                {inspectRecord.canonicalPayload}
+              </div>
+
+              <div className="code-block" style={{ marginBottom: 18, fontSize: 12, wordBreak: 'break-all' }}>
+                <div style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600, marginBottom: 4 }}>// Resulting SHA-256 Digest</div>
+                {inspectRecord.integrityHash}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8 }}>
+                <Info size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>
+                  <strong>Note:</strong> Client-side cryptographic hashing demonstrates data integrity concepts in this prototype. In a production deployment, audit receipts are signed with AWS KMS asymmetric keys and written to append-only ledgers (e.g., Amazon QLDB).
+                </span>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Verification Certificate Modal */}
       <AnimatePresence>
@@ -222,7 +367,7 @@ export default function AuditTrail() {
               className="apple-card"
               style={{
                 maxWidth: 620,
-                margin: '80px auto',
+                margin: '70px auto',
                 padding: '36px 40px',
                 border: '2px solid rgba(212, 175, 55, 0.4)',
                 background: '#FFFFFF',
@@ -245,38 +390,53 @@ export default function AuditTrail() {
                 </div>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#996515', textTransform: 'uppercase' }}>
-                    Compliance & Security Verification Certificate
+                    Compliance & Security Attestation Certificate
                   </div>
                   <h3 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                    Remediation Execution Attestation
+                    Verified Outcome Receipt
                   </h3>
                 </div>
               </div>
 
-              <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
-                This certificate attests that remediation on resource <strong>{displayRecords[0].resource}</strong> was reviewed via Safety Passport protocol, authorized by <strong>demo@cloudpilot.dev</strong>, and verified via independent AWS describe verification.
-              </p>
-
-              <div style={{ background: '#FAF9F8', padding: 16, borderRadius: 12, border: '1px solid var(--border-subtle)', fontSize: 12, fontFamily: 'var(--font-mono)', marginBottom: 24, lineHeight: 1.7 }}>
-                <div>Ledger ID: {displayRecords[0].id}</div>
-                <div>AWS Verification Response: {displayRecords[0].awsResponse}</div>
-                <div>Verification Method: Independent AWS API interrogation</div>
-                <div style={{ wordBreak: 'break-all' }}>SHA-256 Fingerprint: {activeHash}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
+                This digital attestation certifies that all remediation operations executed under CloudPilot session <strong>SP-2026-9042</strong> were subjected to pre-flight safety preconditions, authorized by a human engineer, verified via describe queries, and recorded in the audit trail.
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  CloudPilot Cryptographic Ledger • Issued 2026-10-21
+              <div style={{ background: '#FAF9F8', padding: 16, borderRadius: 10, border: '1px solid var(--border-subtle)', marginBottom: 24, fontSize: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Environment:</span><br />
+                    <strong>{activeScenario === 'student' ? 'Research & ML Lab' : 'Production Core (FinTech)'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Signer:</span><br />
+                    <strong>{user.email}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Actions Verified:</span><br />
+                    <strong>{displayRecords.length} Operation(s)</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Ledger SHA-256:</span><br />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{activeHash.slice(0, 16)}…</span>
+                  </div>
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => {
-                    sound.playClick();
-                    window.print();
-                  }}
-                  className="btn btn-primary btn-sm"
+                  onClick={() => window.print()}
+                  className="btn btn-secondary"
+                  style={{ gap: 6 }}
                 >
-                  <Download size={13} />
+                  <Printer size={14} />
                   <span>Print Certificate</span>
+                </button>
+                <button
+                  onClick={() => setShowCertificate(false)}
+                  className="btn btn-primary"
+                >
+                  Done
                 </button>
               </div>
             </motion.div>

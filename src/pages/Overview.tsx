@@ -2,7 +2,8 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield, ArrowRight, Activity,
-  CheckCircle2, AlertTriangle, Play, Sparkles
+  CheckCircle2, AlertTriangle, Zap, Sparkles,
+  DollarSign, FileText, Lock, ChevronRight
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDemo } from '../context/useDemo';
@@ -12,12 +13,16 @@ export default function Overview() {
   const navigate = useNavigate();
   const {
     activeScenario,
+    accountConfig,
     findings,
     isRemediated,
+    resolvedFindingIds,
     securityScore,
     criticalCount,
     monthlyWaste,
-    resolvedCount
+    resolvedCount,
+    auditRecords,
+    setSelectedFindingId
   } = useDemo();
 
   const isStudent = activeScenario === 'student';
@@ -42,6 +47,15 @@ export default function Overview() {
     { day: 'Oct 22 (Proj)', cost: null, projected: isRemediated ? 6.80 : 8.25 },
   ];
 
+  const handleActionOnFinding = (findingId: string) => {
+    sound.playClick();
+    setSelectedFindingId(findingId);
+    navigate('/passport');
+  };
+
+  const highCount = findings.filter((f) => f.severity === 'high' && f.status === 'open').length;
+  const mediumCount = findings.filter((f) => f.severity === 'medium' && f.status === 'open').length;
+
   return (
     <div className="page-container">
       {/* ── Dark Product Showcase Hero (Apple Keynote Style) ── */}
@@ -54,7 +68,7 @@ export default function Overview() {
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div className="keynote-badge">
             <Sparkles size={12} color="#0071E3" />
-            <span>CLOUDPILOT • {isStudent ? 'STUDENT ML RESEARCH SANDBOX' : 'FINTECH MVP DEV'}</span>
+            <span>CLOUDPILOT • {accountConfig.alias.toUpperCase()}</span>
           </div>
 
           <h1 className="display-title" style={{ color: '#FFFFFF', marginBottom: 12 }}>
@@ -62,7 +76,7 @@ export default function Overview() {
             <span style={{ color: '#8E8E93' }}>Approve the fix. Prove the outcome.</span>
           </h1>
 
-          <p className="body-lead" style={{ color: '#A1A1A6', maxWidth: 680, marginBottom: 28 }}>
+          <p className="body-lead" style={{ color: '#A1A1A6', maxWidth: 680, marginBottom: 26 }}>
             CloudPilot gives developers and early-stage teams superhuman cloud cost and security governance.
             AI explains the root-cause with deterministic telemetry; the human engineer approves the action via a verified Safety Passport™.
           </p>
@@ -70,29 +84,94 @@ export default function Overview() {
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
               onClick={() => {
-                sound.playSuccess();
-                navigate('/connect');
+                sound.playClick();
+                navigate('/discover');
               }}
               className="btn btn-primary btn-lg"
             >
-              <Play size={16} fill="currentColor" />
-              <span>Start Interactive Demo Walkthrough</span>
+              <Zap size={16} fill="currentColor" />
+              <span>Investigate {findings.length} Open Cloud Findings</span>
             </button>
 
             <button
               onClick={() => {
                 sound.playClick();
-                navigate('/discover');
+                navigate('/connect');
               }}
               className="btn btn-secondary btn-lg"
               style={{ background: 'rgba(255,255,255,0.1)', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.16)' }}
             >
               <Activity size={16} />
-              <span>Inspect {findings.length} Live Findings</span>
+              <span>Two-Role IAM Connection Settings</span>
             </button>
           </div>
         </div>
       </motion.div>
+
+      {/* ── Environment Health Status Card ── */}
+      <div
+        className="apple-card"
+        style={{
+          marginBottom: 24,
+          padding: '16px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 14,
+          background: '#FFFFFF',
+          borderLeft: criticalCount > 0 ? '4px solid var(--apple-crimson)' : '4px solid var(--apple-emerald)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: criticalCount > 0 ? 'var(--apple-crimson-light)' : 'var(--apple-emerald-light)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            {criticalCount > 0 ? (
+              <AlertTriangle size={18} color="var(--apple-crimson)" />
+            ) : (
+              <CheckCircle2 size={18} color="var(--apple-emerald-dark)" />
+            )}
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
+              Environment: {accountConfig.alias} (acct-{accountConfig.accountId} in {accountConfig.region})
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {criticalCount > 0
+                ? `${criticalCount} critical exposure requires human authorization • Estimated ~$${monthlyWaste.toFixed(2)}/mo ongoing run-rate leak`
+                : `All critical exposures resolved and verified for this session • Audit ledger updated`}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <span className="badge badge-critical">{criticalCount} Critical</span>
+            <span className="badge badge-high">{highCount} High</span>
+            <span className="badge badge-neutral">{mediumCount} Medium</span>
+          </div>
+          <button
+            onClick={() => {
+              sound.playClick();
+              navigate('/discover');
+            }}
+            className="btn btn-secondary btn-sm"
+          >
+            <span>View All</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      </div>
 
       {/* ── Dynamic Metric Cards ── */}
       <div className="metric-grid">
@@ -111,7 +190,7 @@ export default function Overview() {
           </div>
           <div className="metric-footer" style={{ color: isRemediated ? 'var(--apple-emerald-dark)' : 'var(--text-secondary)', fontWeight: 600 }}>
             {isRemediated ? (
-              <span>↑ +{isStudent ? '46' : '38'} pts post-remediation</span>
+              <span>↑ Dynamic score boost post-remediation</span>
             ) : (
               <span style={{ color: 'var(--apple-amber-dark)' }}>Action pending review</span>
             )}
@@ -132,7 +211,7 @@ export default function Overview() {
             {criticalCount}
           </div>
           <div className="metric-footer" style={{ color: 'var(--text-secondary)' }}>
-            <span>{isStudent ? 'Public Jupyter port 8888 open' : 'SSH Port 22 open to 0.0.0.0/0'}</span>
+            <span>{criticalCount > 0 ? 'Public ports exposed to 0.0.0.0/0' : '0 unmitigated critical risks ✓'}</span>
           </div>
         </motion.div>
 
@@ -143,14 +222,14 @@ export default function Overview() {
           transition={{ delay: 0.15 }}
         >
           <div className="metric-header">
-            <span className="metric-label">Projected Monthly Waste</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--apple-amber-dark)' }}>$</span>
+            <span className="metric-label">Estimated Monthly Waste</span>
+            <DollarSign size={16} color="var(--apple-amber-dark)" />
           </div>
           <div className="metric-value" style={{ color: 'var(--apple-amber-dark)' }}>
             ~${monthlyWaste.toFixed(2)}
           </div>
           <div className="metric-footer" style={{ color: 'var(--text-secondary)' }}>
-            <span>{isStudent ? 'Idle p3.2xlarge GPU VM' : 'Unattached EBS + Idle Elastic IP'}</span>
+            <span>{isStudent ? 'Assumes 24/7 idle GPU at $3.06/hr' : 'Assumes detached EBS + unassociated EIP'}</span>
           </div>
         </motion.div>
 
@@ -165,23 +244,23 @@ export default function Overview() {
             <CheckCircle2 size={16} color="var(--apple-emerald)" />
           </div>
           <div className="metric-value" style={{ color: resolvedCount > 0 ? 'var(--apple-emerald-dark)' : 'var(--text-tertiary)' }}>
-            {resolvedCount} Action
+            {resolvedCount} Action{resolvedCount !== 1 ? 's' : ''}
           </div>
           <div className="metric-footer" style={{ color: 'var(--text-secondary)' }}>
-            <span>{resolvedCount > 0 ? 'Immutable Audit Hash logged' : 'Awaiting human authorization'}</span>
+            <span>{resolvedCount > 0 ? `${auditRecords.length} verifiable audit record(s)` : 'Awaiting human authorization'}</span>
           </div>
         </motion.div>
       </div>
 
       {/* ── Main Content Grid: Trend Chart & Findings ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: 24, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: 24, marginBottom: 32 }}>
         {/* Cost Trend Chart */}
         <div className="apple-card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <div className="section-title">AWS Spend & Remediation Curve</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-                Simulated daily run-rate before and after applying CloudPilot proposed fixes
+                Simulated daily run-rate trajectory based on standard AWS pricing
               </div>
             </div>
             <span className={`badge ${isRemediated ? 'badge-success' : 'badge-neutral'}`}>
@@ -243,7 +322,7 @@ export default function Overview() {
           </div>
 
           <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
-            *Disclaimer: Run-rate estimates reflect simulated reductions based on AWS standard pricing. Realized totals depend on monthly billing cycles.
+            *Note on Pricing: Financial calculations are illustrative estimates assuming continuous 24/7 resource utilization at published AWS rates ($3.06/hr for p3.2xlarge, $0.08/GB-mo for gp3). Realized billing impact depends on final AWS invoice closing.
           </div>
         </div>
 
@@ -251,63 +330,148 @@ export default function Overview() {
         <div className="apple-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div className="section-title">Safety Passport™ Awaiting Sign-Off</div>
+              <div className="section-title">Safety Passport™ Remediation Queue</div>
               <span className={`badge ${isRemediated ? 'badge-success' : 'badge-high'}`}>
-                {isRemediated ? 'Remediation Approved' : 'Action Required'}
+                {isRemediated ? `${resolvedCount} Remediated ✓` : 'Sign-Off Required'}
               </span>
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 16 }}>
               {isRemediated ? (
-                <span>Remediation completed and verified for this session. Review the cryptographic audit record.</span>
+                <span>Remediation completed and verified for selected finding. The cryptographic audit record has been appended to the ledger.</span>
               ) : (
-                <span>A Safety Passport has been pre-generated for target <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: 4 }}>{findings[0].id}</code>. All 5 automated safety preconditions have passed. CloudPilot will never execute without explicit authorization.</span>
+                <span>A Safety Passport has been generated for target <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: 4 }}>{findings[0].id}</code>. All 5 automated safety preconditions have passed. CloudPilot will never execute without explicit authorization.</span>
               )}
             </p>
 
             <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <span className={`badge ${isRemediated ? 'badge-success' : 'badge-critical'}`}>
-                  {isRemediated ? 'RESOLVED ✓' : 'CRITICAL'}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{findings[0].title}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className={`badge ${resolvedFindingIds.includes(findings[0].id) ? 'badge-success' : 'badge-critical'}`}>
+                    {resolvedFindingIds.includes(findings[0].id) ? 'RESOLVED ✓' : 'CRITICAL'}
+                  </span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{findings[0].title}</span>
+                </div>
+                {findings[0].estimatedSavings && (
+                  <span className="badge badge-success">
+                    Save ~${findings[0].estimatedSavings.toFixed(2)}/mo
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
                 Target: <span style={{ fontFamily: 'var(--font-mono)' }}>{findings[0].resource.id}</span> ({findings[0].resource.name}, {findings[0].resource.region})
               </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                 <span className="badge badge-success">✓ 0 Disrupted sessions</span>
                 <span className="badge badge-success">✓ Rollback ready</span>
+                <span className="badge badge-info">Operation: {findings[0].operation}</span>
               </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 10 }}>
             <button
-              onClick={() => {
-                sound.playClick();
-                navigate('/passport');
-              }}
+              onClick={() => handleActionOnFinding(findings[0].id)}
               className="btn btn-primary"
               style={{ flex: 1 }}
             >
-              <span>{isRemediated ? 'Review Safety Passport' : 'Inspect Passport'}</span>
+              <span>{resolvedFindingIds.includes(findings[0].id) ? 'Review Safety Passport' : 'Inspect Safety Passport'}</span>
               <ArrowRight size={14} />
             </button>
             <button
               onClick={() => {
                 sound.playClick();
-                navigate(isRemediated ? '/audit' : '/approve');
+                setSelectedFindingId(findings[0].id);
+                navigate(resolvedFindingIds.includes(findings[0].id) ? '/audit' : '/approve');
               }}
               className="btn btn-secondary"
             >
-              <span>{isRemediated ? 'View Audit Proof' : 'Slide to Approve'}</span>
+              <span>{resolvedFindingIds.includes(findings[0].id) ? 'View Audit Proof' : 'Slide to Approve'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── Philosophy Banner ── */}
+      {/* ── Prioritized Actionable Findings List ── */}
+      <div className="apple-card" style={{ marginBottom: 32, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+              Prioritized Actionable Findings ({findings.length})
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Deterministic findings evaluated across {accountConfig.alias} infrastructure
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              sound.playClick();
+              navigate('/discover');
+            }}
+            className="btn btn-secondary btn-sm"
+          >
+            <span>Open Investigation Workspace</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
+
+        <div>
+          {findings.map((f, idx) => {
+            const isResolved = f.status === 'resolved' || resolvedFindingIds.includes(f.id);
+            const isBlocked = f.status === 'blocked';
+
+            return (
+              <div
+                key={f.id}
+                style={{
+                  padding: '16px 24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  borderBottom: idx < findings.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                  background: isResolved ? '#FAFDFB' : '#FFFFFF'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: isResolved ? 'var(--apple-emerald)' : isBlocked ? 'var(--apple-amber)' : f.severity === 'critical' ? 'var(--apple-crimson)' : 'var(--apple-amber)' }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <span className={`badge ${isResolved ? 'badge-success' : isBlocked ? 'badge-high' : f.severity === 'critical' ? 'badge-critical' : 'badge-high'}`}>
+                        {isResolved ? 'RESOLVED ✓' : isBlocked ? 'SAFETY BLOCKED' : f.severity.toUpperCase()}
+                      </span>
+                      <span style={{ fontWeight: 600, fontSize: 13.5, color: isResolved ? 'var(--apple-emerald-dark)' : 'var(--text-primary)' }}>
+                        {f.title}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                      {f.resource.id} ({f.affectedService}) • {f.resource.region}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {f.estimatedSavings && (
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--apple-emerald-dark)' }}>
+                      ~${f.estimatedSavings.toFixed(2)}/mo
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleActionOnFinding(f.id)}
+                    className={`btn btn-sm ${isResolved ? 'btn-secondary' : 'btn-primary'}`}
+                    style={{ padding: '6px 14px', fontSize: 12 }}
+                  >
+                    <span>{isResolved ? 'Inspect Audit' : isBlocked ? 'Review Blocker' : 'Safety Passport'}</span>
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Two-Role IAM Trust Model Callout ── */}
       <div
         className="apple-card"
         style={{
@@ -319,14 +483,20 @@ export default function Overview() {
           gap: 20
         }}
       >
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-            Zero Credential Exposure • Two-Role Isolated Security Model
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--apple-blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Lock size={20} color="var(--apple-blue)" />
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            CloudPilot operates strictly on read-only IAM assume role permissions. Remediation actions are simulated, signed, and proven with cryptographic audit receipts.
+          <div>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              Strictly Decoupled Two-Role IAM Architecture
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+              Discovery is 100% read-only (`SecurityAudit` + `ViewOnlyAccess`). Remediation roles are assumed strictly upon physical human authorization.
+            </div>
           </div>
         </div>
+
         <button
           onClick={() => {
             sound.playClick();
@@ -335,7 +505,8 @@ export default function Overview() {
           className="btn btn-secondary btn-sm"
           style={{ flexShrink: 0 }}
         >
-          <span>View IAM Policy</span>
+          <FileText size={13} />
+          <span>View CloudFormation Spec</span>
           <ArrowRight size={13} />
         </button>
       </div>

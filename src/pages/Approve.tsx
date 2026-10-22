@@ -2,72 +2,66 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
-  ShieldAlert, CheckCircle2,
-  Terminal, ArrowRight, Lock, Sparkles
+  CheckCircle2,
+  ArrowRight, Lock, AlertTriangle,
+  FileText, Check
 } from 'lucide-react';
 import SlideToApprove from '../components/SlideToApprove';
 import { useDemo } from '../context/useDemo';
+import { useAuth } from '../context/useAuth';
 import { sound } from '../utils/soundEngine';
 
 type Phase = 'review' | 'executing' | 'verified';
 
 export default function Approve() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     getActiveFinding,
-    activeScenario,
-    isRemediated,
+    accountConfig,
+    resolvedFindingIds,
+    securityScore,
     approveRemediation
   } = useDemo();
 
   const currentFinding = getActiveFinding();
-  const isStudent = activeScenario === 'student';
+  const isAlreadyResolved = currentFinding.status === 'resolved' || resolvedFindingIds.includes(currentFinding.id);
+  const isBlocked = currentFinding.status === 'blocked' || currentFinding.isSafetyBlocked;
 
   const [phase, setPhase] = useState<Phase>('review');
   const [confirmedFriction, setConfirmedFriction] = useState(false);
-  const [logIndex, setLogIndex] = useState(0);
+  const [executionStep, setExecutionStep] = useState(0);
 
-  const effectivePhase: Phase = isRemediated ? 'verified' : phase;
+  const effectivePhase: Phase = isAlreadyResolved ? 'verified' : phase;
 
-  const terminalLogs = isStudent ? [
-    '[0.10s] Initializing verified execution runner...',
-    '[0.35s] Assuming role arn:aws:iam::987654321098:role/CloudPilotRemediationRole via STS...',
-    `[0.68s] Checking pre-flight preconditions: Target instance ${currentFinding.resource.id} presence confirmed in us-east-1.`,
-    `[1.15s] Executing atomic call: ec2:StopInstances (InstanceIds: ["${currentFinding.resource.id}"], Hibernate: false)...`,
-    '[1.82s] AWS Response 200 OK. AWS RequestId: req-aws-7f89a-student-cs682',
-    '[2.30s] Running independent verification query: ec2:DescribeInstances...',
-    `[2.75s] Instance state transitioned: running -> STOPPED. Attached EBS storage retained.`,
-    '[3.15s] Hourly run-rate reduced from $3.06/hr to $0.00/hr ($2,203/mo projected leak halted).',
-    '[3.40s] Verification complete. Security Health Score recalculated: 88% (+46 pts).'
-  ] : [
-    '[0.10s] Initializing verified execution runner...',
-    '[0.35s] Assuming role arn:aws:iam::123456789012:role/CloudPilotRemediationRole via STS...',
-    `[0.68s] Checking pre-flight preconditions: Target ${currentFinding.resource.id} presence confirmed in ap-south-1.`,
-    `[1.15s] Executing atomic call: ec2:RevokeSecurityGroupIngress (IpProtocol: tcp, FromPort: 22, CidrIp: 0.0.0.0/0)...`,
-    '[1.82s] AWS Response 200 OK. AWS RequestId: req-aws-9042b-fintech-mumbai',
-    '[2.30s] Running independent verification query: ec2:DescribeSecurityGroups...',
-    '[2.75s] Rule 0.0.0.0/0:22 successfully revoked. Inbound rules 80 and 443 remain unaffected.',
-    '[3.15s] Ephemeral rollback checkpoint preserved in audit ledger.',
-    '[3.40s] Verification complete. Security Health Score recalculated: 72% (+38 pts).'
+  // 6 Believable Execution Stages
+  const executionStages = [
+    { title: 'Rechecking Preconditions', detail: `Validating resource presence and state for ${currentFinding.resource.id}` },
+    { title: 'Confirming Human Signature', detail: `Verifying cryptographic authorization signature from ${user.email}` },
+    { title: 'Assuming Scoped IAM Role', detail: `STS AssumeRole: arn:aws:iam::${accountConfig.accountId}:role/CloudPilotRemediationRole` },
+    { title: 'Dispatching Atomic AWS API Call', detail: `Executing ${currentFinding.operation} with verified parameter payload` },
+    { title: 'Reading Back Verified State', detail: `Calling verification describe query for ${currentFinding.resource.id}` },
+    { title: 'Recording Cryptographic Audit Proof', detail: 'Calculating WebCrypto SHA-256 hash and appending to ledger' },
   ];
 
   const startExecution = () => {
+    if (isBlocked) return;
     setPhase('executing');
-    setLogIndex(0);
+    setExecutionStep(0);
 
-    let currentLine = 0;
+    let step = 0;
     const interval = setInterval(() => {
-      currentLine++;
-      setLogIndex(currentLine);
-      if (currentLine >= terminalLogs.length) {
+      step++;
+      setExecutionStep(step);
+      if (step >= executionStages.length) {
         clearInterval(interval);
-        // Call global context to record remediation & calculate genuine hash
-        approveRemediation().then(() => {
+        // Dispatch to global DemoContext to persist state
+        approveRemediation(currentFinding.id).then(() => {
           sound.playSuccess();
           setPhase('verified');
         });
       }
-    }, 380);
+    }, 420);
   };
 
   return (
@@ -76,17 +70,19 @@ export default function Approve() {
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <span className="badge badge-info">STAGE 4 OF 5</span>
-          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Human-in-the-Loop Governance</span>
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+            Human-in-the-Loop Governance • {currentFinding.id}
+          </span>
         </div>
         <h1 className="display-title" style={{ marginBottom: 6 }}>
           Explicit Authorization & Execution
         </h1>
-        <p className="body-lead" style={{ maxWidth: 740 }}>
-          CloudPilot enforces intentional friction. No AI agent or script can execute privileged changes autonomously. You explicitly sign and authorize the remediation.
+        <p className="body-lead" style={{ maxWidth: 760 }}>
+          CloudPilot enforces intentional friction. No automated script or AI agent can alter your cloud without explicit sign-off. Review the proposed action and authorize execution.
         </p>
       </div>
 
-      <div style={{ maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ maxWidth: 880, margin: '0 auto' }}>
         <AnimatePresence mode="wait">
           {/* Phase 1: Review & Slide to Authorize */}
           {effectivePhase === 'review' && (
@@ -98,26 +94,103 @@ export default function Approve() {
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
             >
+              {/* Safety Blocker Notice if finding failed checks */}
+              {isBlocked && (
+                <div
+                  className="apple-card"
+                  style={{
+                    background: 'rgba(255, 159, 10, 0.08)',
+                    border: '2px solid rgba(255, 159, 10, 0.4)',
+                    padding: 20
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                    <AlertTriangle size={24} color="var(--apple-amber-dark)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--apple-amber-dark)', marginBottom: 4 }}>
+                        Remediation Blocked by Pre-Flight Safety Engine
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, marginBottom: 12 }}>
+                        {currentFinding.blockedReason || 'Automated safety checks failed. CloudPilot prevents executing this remediation because dependent services would be impacted.'}
+                      </div>
+                      <button
+                        onClick={() => {
+                          sound.playClick();
+                          navigate('/passport');
+                        }}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        <span>Inspect Precondition Details in Safety Passport</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Action Disclosure Card */}
               <div
                 className="apple-card"
                 style={{
-                  borderLeft: '4px solid var(--apple-crimson)',
+                  borderLeft: `4px solid ${isBlocked ? 'var(--apple-amber)' : 'var(--apple-blue)'}`,
                   background: '#FFFFFF'
                 }}
               >
-                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--apple-crimson-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <ShieldAlert size={22} color="var(--apple-crimson)" />
+                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      background: isBlocked ? 'var(--apple-amber-light)' : 'var(--apple-blue-light)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    {isBlocked ? (
+                      <AlertTriangle size={24} color="var(--apple-amber-dark)" />
+                    ) : (
+                      <Lock size={22} color="var(--apple-blue)" />
+                    )}
                   </div>
+
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                      Authorized AWS Operation: {isStudent ? 'ec2:StopInstances' : 'ec2:RevokeSecurityGroupIngress'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Proposed AWS Action: {currentFinding.operation}
+                      </div>
+                      <span className={`badge ${currentFinding.severity === 'critical' ? 'badge-critical' : 'badge-high'}`}>
+                        {currentFinding.severity.toUpperCase()}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                      Target: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{currentFinding.resource.id}</span> ({currentFinding.resource.name}, {currentFinding.resource.region})<br />
-                      Remediation: {isStudent ? 'Stop idle GPU instance to halt per-second compute fees.' : 'Remove inbound rule for TCP Port 22 from 0.0.0.0/0.'}<br />
-                      Safety Guarantee: {isStudent ? 'All EBS root volume training data preserved; can be started back in 45s.' : 'Existing TCP sessions persist without interruption.'}
+
+                    <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
+                      <strong>Target Infrastructure:</strong> <code style={{ fontFamily: 'var(--font-mono)' }}>{currentFinding.resource.id}</code> ({currentFinding.resource.name}, {currentFinding.resource.region})<br />
+                      <strong>Scope:</strong> {currentFinding.title}<br />
+                      <strong>Remediation:</strong> {currentFinding.recommendedAction}
+                    </div>
+
+                    {/* Before vs Expected State Preview */}
+                    <div style={{ background: '#FAF9F8', padding: 14, borderRadius: 10, border: '1px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', textTransform: 'uppercase' }}>
+                          Current Simulated State
+                        </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                          {currentFinding.beforeState}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', textTransform: 'uppercase' }}>
+                          Expected Verified State
+                        </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--apple-emerald-dark)', fontWeight: 600, marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                          {currentFinding.afterState}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -127,11 +200,13 @@ export default function Approve() {
               <div
                 className="apple-card"
                 onClick={() => {
+                  if (isBlocked) return;
                   sound.playClick();
                   setConfirmedFriction(!confirmedFriction);
                 }}
                 style={{
-                  cursor: 'pointer',
+                  cursor: isBlocked ? 'not-allowed' : 'pointer',
+                  opacity: isBlocked ? 0.5 : 1,
                   borderColor: confirmedFriction ? 'var(--apple-blue)' : 'var(--border-subtle)',
                   background: confirmedFriction ? 'rgba(0, 113, 227, 0.03)' : '#FFFFFF',
                   padding: 18,
@@ -159,30 +234,41 @@ export default function Approve() {
                 </div>
 
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  I confirm that I have reviewed the Safety Passport, verified that no active user traffic will be lost, and note the deterministic rollback CLI command.
+                  I confirm that I have reviewed the Safety Passport, verified that no active user traffic will be lost, and understand the deterministic rollback CLI command.
                 </div>
               </div>
 
-              {/* Apple Physical Slide to Approve Component with Keyboard Support */}
-              <div className="apple-card" style={{ padding: 24, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Lock size={14} /> Slide or Press Enter to Sign & Authorize Execution
+              {/* Slide to Approve Interaction (Mouse, Touch, Keyboard) */}
+              <div className="apple-card" style={{ padding: 26, textAlign: 'center' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <Lock size={14} /> Explicit Authorization Gate (Press Enter or Slide to Sign)
                 </div>
 
                 <SlideToApprove
-                  disabled={!confirmedFriction}
+                  disabled={!confirmedFriction || isBlocked}
                   onApprove={startExecution}
-                  text={confirmedFriction ? 'Slide or Press Enter to Authorize' : 'Confirm Checkbox Above to Unlock Slider'}
+                  text={isBlocked ? 'Blocked by Safety Engine' : confirmedFriction ? 'Slide or Press Enter to Authorize' : 'Confirm Checkbox Above to Unlock Slider'}
                 />
 
-                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 12 }}>
-                  Protected by CloudPilot Non-Repudiation Policy • Signed by demo@cloudpilot.dev
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 14, fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+                  <span>Authorized by: <strong>{user.name}</strong> ({user.email})</span>
+                  <span>•</span>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      navigate('/passport');
+                    }}
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11.5, color: 'var(--text-secondary)', padding: '2px 8px' }}
+                  >
+                    Cancel & Return to Passport
+                  </button>
                 </div>
               </div>
             </motion.div>
           )}
 
-          {/* Phase 2: Live Execution Terminal Simulation */}
+          {/* Phase 2: Live Execution Stages Simulation */}
           {effectivePhase === 'executing' && (
             <motion.div
               key="executing"
@@ -190,30 +276,78 @@ export default function Approve() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               className="apple-card"
-              style={{ padding: 0, overflow: 'hidden' }}
+              style={{ padding: 28 }}
             >
-              <div className="terminal-header">
-                <div className="terminal-dot" style={{ background: '#FF5F56' }} />
-                <div className="terminal-dot" style={{ background: '#FFBD2E' }} />
-                <div className="terminal-dot" style={{ background: '#27C93F' }} />
-                <div style={{ fontSize: 12, color: '#A1A1A6', marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Terminal size={13} />
-                  <span>CloudPilot Execution Pipeline • Role 2 Assumed</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div className="account-dot" style={{ width: 12, height: 12 }} />
+                <div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700 }}>
+                    Executing Simulated Remediation Pipeline…
+                  </h3>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                    Dispatched under scoped role CloudPilotRemediationRole
+                  </div>
                 </div>
               </div>
 
-              <div className="terminal-body">
-                {terminalLogs.slice(0, logIndex + 1).map((log, i) => (
-                  <div key={i} style={{ color: log.includes('200 OK') || log.includes('complete') ? '#30D158' : '#E2E8F0' }}>
-                    {log}
-                  </div>
-                ))}
-                <div style={{ display: 'inline-block', width: 8, height: 14, background: '#0071E3', marginLeft: 4, verticalAlign: 'middle', animation: 'radar-pulse 1s infinite' }} />
+              {/* Progress Steps */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+                {executionStages.map((stage, i) => {
+                  const isDone = executionStep > i;
+                  const isCurrent = executionStep === i;
+
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        border: `1px solid ${isDone ? 'rgba(48, 209, 88, 0.3)' : isCurrent ? 'var(--apple-blue)' : 'var(--border-subtle)'}`,
+                        background: isDone ? 'rgba(48, 209, 88, 0.05)' : isCurrent ? 'rgba(0, 113, 227, 0.04)' : '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        transition: 'all 200ms ease'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: isDone ? 'var(--apple-emerald)' : isCurrent ? 'var(--apple-blue)' : 'var(--surface-secondary)',
+                          color: isDone || isCurrent ? '#FFFFFF' : 'var(--text-tertiary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          flexShrink: 0
+                        }}
+                      >
+                        {isDone ? <Check size={14} /> : i + 1}
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: isDone ? 'var(--apple-emerald-dark)' : isCurrent ? 'var(--apple-blue)' : 'var(--text-primary)' }}>
+                          {stage.title}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+                          {stage.detail}
+                        </div>
+                      </div>
+
+                      {isCurrent && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-blue)', animation: 'radar-pulse 1s infinite' }} />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </motion.div>
           )}
 
-          {/* Phase 3: Verified Outcome & Score Jump */}
+          {/* Phase 3: Verified Outcome & State Diff */}
           {effectivePhase === 'verified' && (
             <motion.div
               key="verified"
@@ -228,75 +362,80 @@ export default function Approve() {
                 <h2 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.025em', marginBottom: 6 }}>
                   Remediation Successfully Executed & Verified
                 </h2>
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 540, margin: '0 auto 24px' }}>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 580, margin: '0 auto 24px', lineHeight: 1.6 }}>
                   Target <code style={{ fontFamily: 'var(--font-mono)' }}>{currentFinding.resource.id}</code> has been safely remediated. Verified via independent post-execution describe query.
                 </p>
 
-                {/* Score Jump Highlight */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 20, padding: '14px 28px', background: 'var(--surface-secondary)', borderRadius: 16, marginBottom: 24 }}>
+                {/* Score & Savings Impact Banner */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 24, padding: '16px 32px', background: 'var(--surface-secondary)', borderRadius: 16, marginBottom: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Previous Security Score</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-crimson)' }}>
-                      {isStudent ? '42%' : '34%'}
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Security Health Score</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>
+                      {securityScore}% ✓
                     </div>
                   </div>
-                  <ArrowRight size={20} color="var(--text-tertiary)" />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>New Verified Score</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>
-                      {isStudent ? '88% (+46 pts)' : '72% (+38 pts)'}
+
+                  {currentFinding.estimatedSavings && (
+                    <>
+                      <div style={{ width: 1, height: 36, background: 'var(--border-medium)' }} />
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Projected Run-Rate Reduction</div>
+                        <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>
+                          ~${currentFinding.estimatedSavings.toFixed(2)}/mo
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Verified Before vs After State Diff */}
+                <div style={{ textAlign: 'left', background: '#FAF9F8', padding: 20, borderRadius: 14, border: '1px solid var(--border-subtle)', marginBottom: 28, maxWidth: 680, margin: '0 auto 28px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 12 }}>
+                    Verified State Transition Diff
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                    <div style={{ padding: 12, background: '#FFFFFF', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 4 }}>
+                        BEFORE (Simulated Discovery):
+                      </div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                        {currentFinding.beforeState}
+                      </div>
+                    </div>
+                    <div style={{ padding: 12, background: '#FFFFFF', borderRadius: 8, border: '1px solid rgba(48, 209, 88, 0.4)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 4 }}>
+                        AFTER (Independently Verified):
+                      </div>
+                      <div style={{ fontSize: 12.5, color: 'var(--apple-emerald-dark)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                        {currentFinding.afterState}
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div>
+                {/* CTAs */}
+                <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
                   <button
                     onClick={() => {
-                      sound.playClick();
+                      sound.playSuccess();
                       navigate('/audit');
                     }}
                     className="btn btn-primary btn-lg"
                   >
-                    <Sparkles size={16} />
-                    <span>View Cryptographic Audit Trail & Proof</span>
+                    <FileText size={16} />
+                    <span>Inspect Cryptographic Audit Proof</span>
                     <ArrowRight size={16} />
                   </button>
-                </div>
-              </div>
 
-              {/* State Diff Card */}
-              <div className="apple-card">
-                <div className="section-title" style={{ marginBottom: 12 }}>
-                  Verified State Transformation Diff
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div style={{ padding: 14, background: '#FAF9F8', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 6 }}>
-                      BEFORE EXECUTION
-                    </div>
-                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>{isStudent ? 'Compute State' : 'Inbound TCP:22 (SSH)'}</span>
-                      <span style={{ color: 'var(--apple-crimson)', fontWeight: 600 }}>{isStudent ? 'RUNNING (Idle)' : '0.0.0.0/0 (OPEN)'}</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Hourly Cost</span>
-                      <span style={{ color: 'var(--apple-crimson)', fontWeight: 600 }}>{isStudent ? '$3.06 / hour' : 'Active Leak'}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ padding: 14, background: '#FAF9F8', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 6 }}>
-                      VERIFIED AFTER EXECUTION
-                    </div>
-                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>{isStudent ? 'Compute State' : 'Inbound TCP:22 (SSH)'}</span>
-                      <span style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>{isStudent ? 'STOPPED (Verified)' : 'REMOVED ✓'}</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Hourly Cost</span>
-                      <span style={{ color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>{isStudent ? '$0.00 / hour (Compute)' : 'Leak Eliminated'}</span>
-                    </div>
-                  </div>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      navigate('/discover');
+                    }}
+                    className="btn btn-secondary btn-lg"
+                  >
+                    <span>Return to Investigation Workspace</span>
+                  </button>
                 </div>
               </div>
             </motion.div>
