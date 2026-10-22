@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import health, accounts, discovery, auth
+from app.routers import health, accounts, discovery, auth, audit
 from app.services.resilience import format_error_response
 
 logging.basicConfig(
@@ -79,6 +79,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(accounts.router)
 app.include_router(discovery.router)
+app.include_router(audit.router)
 
 @app.on_event("startup")
 def on_startup():

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, Shield, Download,
@@ -11,43 +11,83 @@ import { type AuditRecord } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
 
 export default function AuditTrail() {
-  const { auditRecords, activeHash, exportAuditCSV, activeScenario, appMode } = useDemo();
+  const { auditRecords, activeHash, exportAuditCSV, activeScenario, appMode, backendUrl } = useDemo();
   const { user } = useAuth();
   const [showCertificate, setShowCertificate] = useState(false);
   const [inspectRecord, setInspectRecord] = useState<AuditRecord | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [exported, setExported] = useState(false);
+  const [liveAuditEvents, setLiveAuditEvents] = useState<AuditRecord[]>([]);
+
+  useEffect(() => {
+    if (appMode === 'live') {
+      const token = localStorage.getItem('cloudpilot_jwt_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      fetch(`${backendUrl}/audit/events?mode=live`, { headers })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((events) => {
+          if (Array.isArray(events)) {
+            const mapped: AuditRecord[] = events.map((e: any) => ({
+              id: e.id,
+              findingId: e.finding_id,
+              scenario: `AWS Account ${e.account_id || ''} (${e.region || 'ap-south-1'})`,
+              action: e.action,
+              resource: e.resource_id,
+              authorizedBy: e.actor_email,
+              authorizedAt: e.timestamp,
+              executedAt: e.timestamp,
+              awsResponse: e.aws_request_id && e.aws_request_id !== 'none'
+                ? `200 OK — RequestId: ${e.aws_request_id}`
+                : e.outcome,
+              outcome: (e.outcome === 'succeeded' || e.outcome === 'success') ? 'success' as const : 'failed' as const,
+              beforeState: 'Pre-flight verified',
+              afterState: `Verification: ${e.verification_status || e.outcome}`,
+              canonicalPayload: e.canonical_payload,
+              integrityHash: e.integrity_hash
+            }));
+            setLiveAuditEvents(mapped);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [appMode, backendUrl]);
 
   const displayRecords = useMemo(() => {
     const isLive = appMode === 'live';
-    const list = auditRecords.length > 0 ? auditRecords : [
-      {
-        id: isLive ? 'audit-live-0914' : 'audit-rec-0914',
-        findingId: isLive ? 'live-sec-9012-001' : 'finding-001',
-        scenario: isLive ? 'AWS Live (STS AssumeRole)' : activeScenario === 'student' ? 'Research & ML Lab Sandbox' : 'Production Core (FinTech)',
-        action: isLive
-          ? 'ec2:RevokeSecurityGroupIngress — Revoke 0.0.0.0/0 on TCP:22'
-          : activeScenario === 'student'
-          ? 'ec2:StopInstances — Stop idle GPU instance i-0gpu998877'
-          : 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
-        resource: isLive
-          ? 'sg-0a1b2c3d4e5f (launch-wizard-live-1, ap-south-1)'
-          : activeScenario === 'student'
-          ? 'i-0gpu998877 (pytorch-research-vm, us-east-1)'
-          : 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
-        authorizedBy: user.email,
-        authorizedAt: '2026-10-22T14:35:10Z',
-        executedAt: '2026-10-22T14:35:14Z',
-        awsResponse: isLive ? '200 OK — RequestId: req-aws-live-9042b-mumbai' : '200 OK — RequestId: req-aws-live-audit-ok',
-        outcome: 'success' as const,
-        beforeState: isLive ? 'TCP:22 from 0.0.0.0/0: PRESENT (VULNERABLE)' : activeScenario === 'student' ? 'i-0gpu998877 state: RUNNING ($3.06/hr)' : 'TCP:22 from 0.0.0.0/0: PRESENT',
-        afterState: isLive ? 'TCP:22 from 0.0.0.0/0: REMOVED (VERIFIED ✓)' : activeScenario === 'student' ? 'i-0gpu998877 state: STOPPED ($0.00/hr ✓)' : 'TCP:22 from 0.0.0.0/0: REMOVED (verified ✓)',
-        canonicalPayload: isLive
-          ? `live-sec-9012-001|sg-0a1b2c3d4e5f|2026-10-22T14:35:10Z|req-aws-live-9042b-mumbai|${user.email}`
-          : `finding-001|sg-0a1b2c3d4e5f|2026-10-21T15:04:32Z|req-aws-live-audit-ok|${user.email}`,
-        integrityHash: activeHash
-      }
-    ];
+    let list: AuditRecord[] = [];
+
+    if (isLive) {
+      // In live mode, display only real verified records from server or local session
+      list = liveAuditEvents.length > 0
+        ? liveAuditEvents
+        : auditRecords.filter((r) => r.findingId.startsWith('live-') || r.scenario.includes('Live'));
+      // No synthetic live mock records! If empty, remains empty.
+    } else {
+      // In demo mode, use demo fixtures if no session records exist
+      list = auditRecords.length > 0 ? auditRecords : [
+        {
+          id: 'audit-rec-0914',
+          findingId: 'finding-001',
+          scenario: activeScenario === 'student' ? 'Research & ML Lab Sandbox' : 'Production Core (FinTech)',
+          action: activeScenario === 'student'
+            ? 'ec2:StopInstances — Stop idle GPU instance i-0gpu998877'
+            : 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
+          resource: activeScenario === 'student'
+            ? 'i-0gpu998877 (pytorch-research-vm, us-east-1)'
+            : 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
+          authorizedBy: user.email,
+          authorizedAt: '2026-10-21T15:04:32Z',
+          executedAt: '2026-10-21T15:04:35Z',
+          awsResponse: '200 OK — RequestId: req-aws-simulated-audit-ok',
+          outcome: 'success' as const,
+          beforeState: activeScenario === 'student' ? 'i-0gpu998877 state: RUNNING ($3.06/hr)' : 'TCP:22 from 0.0.0.0/0: PRESENT',
+          afterState: activeScenario === 'student' ? 'i-0gpu998877 state: STOPPED ($0.00/hr ✓)' : 'TCP:22 from 0.0.0.0/0: REMOVED (verified ✓)',
+          canonicalPayload: `finding-001|sg-0a1b2c3d4e5f|2026-10-21T15:04:32Z|req-aws-simulated-audit-ok|${user.email}`,
+          integrityHash: activeHash
+        }
+      ];
+    }
 
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
@@ -58,7 +98,7 @@ export default function AuditTrail() {
       r.resource.toLowerCase().includes(q) ||
       r.scenario.toLowerCase().includes(q)
     );
-  }, [auditRecords, activeScenario, activeHash, searchQuery, user.email, appMode]);
+  }, [auditRecords, liveAuditEvents, activeScenario, activeHash, searchQuery, user.email, appMode]);
 
   const handleExport = () => {
     sound.playSuccess();
@@ -91,7 +131,7 @@ export default function AuditTrail() {
           </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          Every authorized operation is canonicalized and hashed with SHA-256 for non-repudiation and SOC 2 compliance.
+          Cryptographic SHA-256 hash chains guarantee append-only ledger immutability. Corroborate external cloud actions via AWS CloudTrail with recorded AWS Request IDs.
         </div>
       </div>
 
@@ -228,7 +268,25 @@ export default function AuditTrail() {
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{displayRecords.length} record(s)</span>
         </div>
 
-        {displayRecords.map((r, idx) => (
+        {displayRecords.length === 0 ? (
+          <div style={{ padding: '60px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📜</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+              {appMode === 'live' ? 'No Live Audit Records Yet' : 'No Audit Records Found'}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto 16px', lineHeight: 1.5 }}>
+              {appMode === 'live'
+                ? 'No live AWS remediations have been executed yet for this organization. When an engineer approves a finding and the live API call succeeds and verifies, the verifiable cryptographic receipt will appear here.'
+                : 'No demo audit records match the current filter. Complete an authorization flow on the Approve page to populate demo audit records.'}
+            </div>
+            {appMode === 'live' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--apple-blue)', background: 'rgba(0, 113, 227, 0.08)', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(0, 113, 227, 0.2)' }}>
+                <span>🔒 Fail-Closed Rule: Live mode never displays simulated fallback receipts.</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          displayRecords.map((r, idx) => (
           <div
             key={r.id}
             style={{
@@ -293,7 +351,8 @@ export default function AuditTrail() {
               </div>
             </div>
           </div>
-        ))}
+        ))
+      )}
       </div>
 
       {/* Export Compliance Archive Callout */}

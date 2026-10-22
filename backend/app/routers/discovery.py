@@ -320,7 +320,7 @@ def approve_finding(
 
         try:
             FindingRepository.update_status(finding_org, finding.id, "resolved", mode="demo")
-            AuditRepository.record_event(finding_org, {
+            audit_ev = AuditRepository.record_event(finding_org, {
                 "id": f"aud-demo-{uuid.uuid4().hex[:8]}",
                 "finding_id": finding.id,
                 "action": finding.operation,
@@ -328,11 +328,15 @@ def approve_finding(
                 "actor_email": actor_email,
                 "aws_request_id": record.aws_request_id,
                 "outcome": "success",
-                "canonical_payload": canonical_payload,
-                "integrity_hash": integrity_hash,
                 "timestamp": now_iso,
-                "execution_mode": "demo"
+                "execution_mode": "demo",
+                "account_id": getattr(finding.resource, "account_id", "") or "123456789012",
+                "region": getattr(finding.resource, "region", "") or "ap-south-1",
+                "verification_status": "verified",
+                "verification_evidence": {"source": "demo_simulation"}
             })
+            canonical_payload = audit_ev["canonical_payload"]
+            integrity_hash = audit_ev["integrity_hash"]
         except Exception as e:
             logger.warning(f"[DB] Non-fatal audit save error: {e}")
 
@@ -393,6 +397,24 @@ def approve_finding(
             finding.isSafetyBlocked = True
             finding.blockedReason = reason
             _cached_findings[key] = finding
+            try:
+                AuditRepository.record_event(finding_org, {
+                    "id": f"aud-block-{uuid.uuid4().hex[:8]}",
+                    "finding_id": finding.id,
+                    "action": finding.operation,
+                    "resource_id": finding.resource.id,
+                    "actor_email": actor_email,
+                    "aws_request_id": "blocked-before-execution",
+                    "outcome": "blocked",
+                    "timestamp": now_iso,
+                    "execution_mode": "live",
+                    "account_id": account_info["account_id"],
+                    "region": finding.resource.region,
+                    "verification_status": "blocked",
+                    "verification_evidence": {"block_reason": reason}
+                })
+            except Exception as _e:
+                logger.warning(f"[DB] Non-fatal blocked audit save error: {_e}")
             raise HTTPException(status_code=400, detail=f"Safety Passport revalidation blocked: {reason}")
 
         record = execute_live_remediation(
@@ -414,7 +436,7 @@ def approve_finding(
         try:
             if record.state == "succeeded":
                 FindingRepository.update_status(finding_org, finding.id, "resolved", mode="live")
-            AuditRepository.record_event(finding_org, {
+            audit_ev = AuditRepository.record_event(finding_org, {
                 "id": f"aud-{uuid.uuid4().hex[:8]}",
                 "finding_id": finding.id,
                 "action": finding.operation,
@@ -422,11 +444,15 @@ def approve_finding(
                 "actor_email": actor_email,
                 "aws_request_id": record.aws_request_id or "none",
                 "outcome": record.state,
-                "canonical_payload": canonical_payload,
-                "integrity_hash": integrity_hash,
                 "timestamp": now_iso,
-                "execution_mode": "live"
+                "execution_mode": "live",
+                "account_id": account_info["account_id"],
+                "region": finding.resource.region,
+                "verification_status": record.verification_status,
+                "verification_evidence": record.verification_evidence
             })
+            canonical_payload = audit_ev["canonical_payload"]
+            integrity_hash = audit_ev["integrity_hash"]
         except Exception as e:
             logger.warning(f"[DB] Non-fatal live audit save error: {e}")
 

@@ -11,11 +11,15 @@ Non-negotiable Rules:
 """
 
 import os
+import io
+import csv
 import json
+import uuid as uuid_module
 import sqlite3
+import hashlib
 import logging
 from contextlib import contextmanager
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 logger = logging.getLogger("cloudpilot.db")
 
@@ -180,7 +184,7 @@ def init_database_schema():
         );
         """)
 
-        # 8. Append-Only Audit Log
+        # 8. Append-Only Audit Log with Cryptographic Hash-Chain & CloudTrail Linkage
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_events (
             id TEXT PRIMARY KEY,
@@ -193,11 +197,33 @@ def init_database_schema():
             outcome TEXT NOT NULL,
             canonical_payload TEXT NOT NULL,
             integrity_hash TEXT NOT NULL,
+            previous_hash TEXT DEFAULT 'GENESIS',
             timestamp TEXT NOT NULL,
             execution_mode TEXT NOT NULL,
+            account_id TEXT DEFAULT '',
+            region TEXT DEFAULT '',
+            verification_status TEXT DEFAULT 'none',
+            verification_evidence TEXT DEFAULT '{}',
+            cloudtrail_event_hint TEXT DEFAULT '',
             FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
         );
         """)
+
+        # Migration: Ensure all columns exist if table was previously created
+        cursor.execute("PRAGMA table_info(audit_events);")
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+        if "previous_hash" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN previous_hash TEXT DEFAULT 'GENESIS';")
+        if "account_id" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN account_id TEXT DEFAULT '';")
+        if "region" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN region TEXT DEFAULT '';")
+        if "verification_status" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN verification_status TEXT DEFAULT 'none';")
+        if "verification_evidence" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN verification_evidence TEXT DEFAULT '{}';")
+        if "cloudtrail_event_hint" not in existing_cols:
+            cursor.execute("ALTER TABLE audit_events ADD COLUMN cloudtrail_event_hint TEXT DEFAULT '';")
 
         # Performance Indexes for Tenant Isolation & Fast Querying
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_tenant ON findings(organization_id, status);")
@@ -346,47 +372,202 @@ class FindingRepository:
 
 
 class AuditRepository:
+    DISCLAIMER = (
+        "Cryptographic SHA-256 integrity hash validates append-only ledger immutability "
+        "and sequencing within the CloudPilot database. For independent third-party confirmation "
+        "of AWS cloud infrastructure state, corroborate the recorded AWS Request ID against "
+        "AWS CloudTrail management event logs."
+    )
+
     @staticmethod
-    def record_event(org_id: str, event_data: Dict[str, Any]):
+    def record_event(org_id: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
         with get_db_transaction() as conn:
+            # 1. Fetch previous event's integrity hash for this tenant
+            prev_row = conn.execute(
+                "SELECT integrity_hash FROM audit_events WHERE organization_id = ? ORDER BY rowid DESC LIMIT 1",
+                (org_id,)
+            ).fetchone()
+            previous_hash = prev_row["integrity_hash"] if prev_row else "GENESIS"
+
+            # 2. Construct canonical payload and cryptographic hash chain
+            event_id = event_data.get("id") or f"aud-{uuid_module.uuid4().hex[:10]}"
+            req_id = event_data.get("aws_request_id") or "none"
+            outcome = event_data.get("outcome", "unknown")
+            timestamp = event_data.get("timestamp") or "2026-10-23T00:00:00Z"
+            finding_id = event_data.get("finding_id", "")
+            resource_id = event_data.get("resource_id", "")
+            actor_email = event_data.get("actor_email", "")
+
+            canonical_payload = (
+                f"{previous_hash}|{event_id}|{finding_id}|{resource_id}|"
+                f"{timestamp}|{req_id}|{actor_email}|{outcome}"
+            )
+            integrity_hash = hashlib.sha256(canonical_payload.encode()).hexdigest()
+
+            # 3. Construct AWS CloudTrail cross-check hint
+            account_id = event_data.get("account_id", "")
+            region = event_data.get("region", "")
+            action = event_data.get("action", "")
+            cloudtrail_hint = event_data.get("cloudtrail_event_hint")
+            if not cloudtrail_hint:
+                action_name = action.split(" — ")[0] if " — " in action else action
+                action_name = action_name.split(":")[-1] if ":" in action_name else action_name
+                cloudtrail_hint = (
+                    f"AWS CloudTrail: EventName='{action_name}', AWSAccountId='{account_id}', "
+                    f"AWSRegion='{region}', AWSRequestId='{req_id}'"
+                )
+
+            verification_status = event_data.get("verification_status") or ("verified" if outcome == "succeeded" else outcome)
+            verification_evidence = event_data.get("verification_evidence", "{}")
+            if isinstance(verification_evidence, dict):
+                verification_evidence = json.dumps(verification_evidence)
+
             conn.execute("""
             INSERT INTO audit_events (
                 id, organization_id, finding_id, action, resource_id,
                 actor_email, aws_request_id, outcome, canonical_payload,
-                integrity_hash, timestamp, execution_mode
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                integrity_hash, previous_hash, timestamp, execution_mode,
+                account_id, region, verification_status, verification_evidence,
+                cloudtrail_event_hint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                event_data["id"],
+                event_id,
                 org_id,
-                event_data["finding_id"],
-                event_data["action"],
-                event_data["resource_id"],
-                event_data["actor_email"],
-                event_data.get("aws_request_id", ""),
-                event_data["outcome"],
-                event_data["canonical_payload"],
-                event_data["integrity_hash"],
-                event_data["timestamp"],
-                event_data.get("execution_mode", "live")
+                finding_id,
+                action,
+                resource_id,
+                actor_email,
+                req_id,
+                outcome,
+                canonical_payload,
+                integrity_hash,
+                previous_hash,
+                timestamp,
+                event_data.get("execution_mode", "live"),
+                account_id,
+                region,
+                verification_status,
+                verification_evidence,
+                cloudtrail_hint
             ))
 
+            event_record = {
+                **event_data,
+                "id": event_id,
+                "organization_id": org_id,
+                "previous_hash": previous_hash,
+                "canonical_payload": canonical_payload,
+                "integrity_hash": integrity_hash,
+                "cloudtrail_event_hint": cloudtrail_hint,
+                "verification_status": verification_status
+            }
+            return event_record
+
     @staticmethod
-    def list_events(org_id: str, mode: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_events(org_id: str, mode: Optional[str] = None, outcome: Optional[str] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         try:
+            query = "SELECT * FROM audit_events WHERE organization_id = ?"
+            params: List[Any] = [org_id]
             if mode:
-                rows = conn.execute(
-                    "SELECT * FROM audit_events WHERE organization_id = ? AND execution_mode = ? ORDER BY timestamp DESC",
-                    (org_id, mode)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM audit_events WHERE organization_id = ? ORDER BY timestamp DESC",
-                    (org_id,)
-                ).fetchall()
+                query += " AND execution_mode = ?"
+                params.append(mode)
+            if outcome:
+                query += " AND outcome = ?"
+                params.append(outcome)
+            query += " ORDER BY rowid DESC"
+            rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+    @staticmethod
+    def verify_ledger_chain(org_id: str) -> Dict[str, Any]:
+        """Validates the tamper-evident cryptographic hash chain across all tenant audit events."""
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM audit_events WHERE organization_id = ? ORDER BY rowid ASC",
+                (org_id,)
+            ).fetchall()
+
+            if not rows:
+                return {
+                    "is_valid": True,
+                    "tamper_detected": False,
+                    "total_events": 0,
+                    "root_hash": "GENESIS",
+                    "disclaimer": AuditRepository.DISCLAIMER
+                }
+
+            expected_previous = "GENESIS"
+            for row in rows:
+                r_dict = dict(row)
+                # Check 1: previous_hash matches the prior event's integrity_hash
+                if r_dict["previous_hash"] != expected_previous:
+                    return {
+                        "is_valid": False,
+                        "tamper_detected": True,
+                        "tampered_event_id": r_dict["id"],
+                        "error": f"Chain break detected at event {r_dict['id']}: expected prev {expected_previous}, found {r_dict['previous_hash']}",
+                        "disclaimer": AuditRepository.DISCLAIMER
+                    }
+
+                # Check 2: recompute integrity_hash from canonical_payload
+                recomputed_hash = hashlib.sha256(r_dict["canonical_payload"].encode()).hexdigest()
+                if recomputed_hash != r_dict["integrity_hash"]:
+                    return {
+                        "is_valid": False,
+                        "tamper_detected": True,
+                        "tampered_event_id": r_dict["id"],
+                        "error": f"Payload tamper detected at event {r_dict['id']}: stored hash {r_dict['integrity_hash']} != computed {recomputed_hash}",
+                        "disclaimer": AuditRepository.DISCLAIMER
+                    }
+
+                expected_previous = r_dict["integrity_hash"]
+
+            return {
+                "is_valid": True,
+                "tamper_detected": False,
+                "total_events": len(rows),
+                "root_hash": expected_previous,
+                "disclaimer": AuditRepository.DISCLAIMER
+            }
+        finally:
+            conn.close()
+
+    @staticmethod
+    def export_audit(org_id: str, format_type: str = "json", mode: Optional[str] = None) -> Union[Dict[str, Any], str]:
+        events = AuditRepository.list_events(org_id, mode=mode)
+        verification = AuditRepository.verify_ledger_chain(org_id)
+
+        if format_type.lower() == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow([
+                "Event ID", "Finding ID", "Action", "Resource ID", "Actor Email",
+                "AWS Request ID", "Outcome", "Verification Status", "Timestamp",
+                "Execution Mode", "Account ID", "Region", "Integrity Hash",
+                "Previous Hash", "CloudTrail Corroboration Hint"
+            ])
+            for e in events:
+                writer.writerow([
+                    e["id"], e["finding_id"], e["action"], e["resource_id"], e["actor_email"],
+                    e["aws_request_id"], e["outcome"], e["verification_status"], e["timestamp"],
+                    e["execution_mode"], e["account_id"], e["region"], e["integrity_hash"],
+                    e["previous_hash"], e["cloudtrail_event_hint"]
+                ])
+            return output.getvalue()
+
+        return {
+            "organization_id": org_id,
+            "export_format": "json",
+            "execution_mode": mode or "all",
+            "total_events": len(events),
+            "ledger_verification": verification,
+            "events": events,
+            "disclaimer": AuditRepository.DISCLAIMER
+        }
 
 
 # Auto-initialize database schema and indexes on startup
