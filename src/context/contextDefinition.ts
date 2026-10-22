@@ -7,6 +7,8 @@ export type StatusFilter = 'all' | 'open' | 'resolved' | 'blocked';
 export type SortOption = 'severity' | 'savings' | 'newest';
 
 export type AppMode = 'demo' | 'live';
+export type LiveScanStatus = 'idle' | 'scanning' | 'completed' | 'failed' | 'empty' | 'service_unavailable';
+export type LiveConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed';
 
 export interface AccountConfig {
   accountId: string;
@@ -29,10 +31,17 @@ export interface DemoContextType {
   checkBackendHealth: () => Promise<boolean>;
   scanLiveAWS: () => Promise<{ success: boolean; count?: number; error?: string }>;
 
+  // Live state tracking
+  liveScanStatus: LiveScanStatus;
+  liveConnectionStatus: LiveConnectionStatus;
+  liveErrorMessage: string | null;
+  lastScannedAt: string | null;
+  isStaleData: boolean;
+
   activeScenario: ScenarioType;
   setScenario: (scenario: ScenarioType) => void;
   findings: Finding[];
-  isRemediated: boolean; // true if any finding has been remediated in this session
+  isRemediated: boolean;
   resolvedFindingIds: string[];
   securityScore: number;
   criticalCount: number;
@@ -48,7 +57,7 @@ export interface DemoContextType {
   resetDemo: () => void;
   exportAuditCSV: () => void;
   
-  // Account onboarding & simulation connection
+  // Account onboarding & connection
   accountConfig: AccountConfig;
   updateAccountConfig: (cfg: Partial<AccountConfig>) => void;
   connectAccount: (custom?: boolean) => Promise<{ success: boolean; error?: string }>;

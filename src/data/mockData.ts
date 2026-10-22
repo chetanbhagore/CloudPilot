@@ -61,6 +61,14 @@ export interface Finding {
   telemetryMetricName: string;
   telemetryUnit: string;
   telemetryData: TelemetryPoint[];
+
+  // Provenance & Mode Isolation
+  executionMode?: 'live' | 'demo';
+  execution_mode?: 'live' | 'demo';
+  dataSource?: 'live_aws' | 'demo_fixture';
+  data_source?: 'live_aws' | 'demo_fixture';
+  isStale?: boolean;
+  verifiedAt?: string;
 }
 
 export interface SafetyPassport {

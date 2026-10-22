@@ -5,8 +5,7 @@ import {
   FINTECH_FINDINGS,
   STUDENT_FINDINGS,
   FINTECH_ACCOUNT,
-  STUDENT_ACCOUNT,
-  LIVE_AWS_SEEDED_FINDINGS
+  STUDENT_ACCOUNT
 } from '../data/mockData';
 import {
   DemoContext,
@@ -15,7 +14,9 @@ import {
   type AccountConfig,
   type FilterCategory,
   type StatusFilter,
-  type SortOption
+  type SortOption,
+  type LiveScanStatus,
+  type LiveConnectionStatus
 } from './contextDefinition';
 
 // ─── Native WebCrypto SHA-256 Hash Generator ──────────────────────────────────
@@ -33,7 +34,7 @@ function cloneFindings(list: Finding[]): Finding[] {
 export function DemoProvider({ children }: { children: ReactNode }) {
   const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
-  // App Mode: 'demo' (mockData) vs 'live' (real AWS via FastAPI backend)
+  // App Mode: 'demo' (mock scenarios) vs 'live' (real AWS via FastAPI backend)
   const [appMode, setAppModeState] = useState<AppMode>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cloudpilot_app_mode');
@@ -44,28 +45,32 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
   const [activeScenario, setActiveScenarioState] = useState<ScenarioType>('fintech');
+  
+  // ── Live Execution State (Strictly Isolated from Demo) ───────────────────────
+  const [liveFindings, setLiveFindings] = useState<Finding[]>([]);
+  const [liveScanStatus, setLiveScanStatus] = useState<LiveScanStatus>('idle');
+  const [liveConnectionStatus, setLiveConnectionStatus] = useState<LiveConnectionStatus>('disconnected');
+  const [liveErrorMessage, setLiveErrorMessage] = useState<string | null>(null);
+  const [lastScannedAt, setLastScannedAt] = useState<string | null>(null);
+  const [isStaleData, setIsStaleData] = useState<boolean>(false);
+
+  // Active findings displayed in the UI
   const [findings, setFindings] = useState<Finding[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cloudpilot_app_mode');
       if (saved === 'live') {
-        return cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
+        return [];
       }
     }
     return cloneFindings(FINTECH_FINDINGS);
   });
-  const [liveFindings, setLiveFindings] = useState<Finding[]>(() => cloneFindings(LIVE_AWS_SEEDED_FINDINGS));
+
   const [resolvedFindingIds, setResolvedFindingIds] = useState<string[]>([]);
   const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([]);
   const [activeHash, setActiveHash] = useState<string>('sha256-pending-authorization');
-  const [selectedFindingId, setSelectedFindingId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('cloudpilot_app_mode');
-      if (saved === 'live') return 'live-sec-9012-001';
-    }
-    return 'finding-001';
-  });
+  const [selectedFindingId, setSelectedFindingId] = useState<string>('finding-001');
 
-  // Account configuration & simulation onboarding
+  // Account configuration
   const [accountConfig, setAccountConfig] = useState<AccountConfig>({
     accountId: FINTECH_ACCOUNT.accountId,
     alias: FINTECH_ACCOUNT.alias,
@@ -78,7 +83,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     isLive: false
   });
 
-  // Check backend health periodically and on mount
+  // Check backend health periodically
   const checkBackendHealth = useCallback(async (): Promise<boolean> => {
     try {
       const controller = new AbortController();
@@ -87,12 +92,18 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       clearTimeout(timeoutId);
       const online = res.ok;
       setIsBackendOnline(online);
+      if (!online && appMode === 'live') {
+        setLiveScanStatus('service_unavailable');
+      }
       return online;
     } catch {
       setIsBackendOnline(false);
+      if (appMode === 'live') {
+        setLiveScanStatus('service_unavailable');
+      }
       return false;
     }
-  }, [backendUrl]);
+  }, [backendUrl, appMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -105,41 +116,54 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     };
   }, [checkBackendHealth]);
 
+  // Mode Switcher: Strict Partitioning between Demo and Live
   const setAppMode = (mode: AppMode) => {
     setAppModeState(mode);
     if (typeof window !== 'undefined') {
       localStorage.setItem('cloudpilot_app_mode', mode);
     }
+    
     if (mode === 'live') {
       checkBackendHealth();
+      // In live mode: Display only real live findings. Never inject demo fixtures!
+      setFindings(liveFindings);
       if (liveFindings.length > 0) {
-        setFindings(liveFindings);
         setSelectedFindingId(liveFindings[0].id);
       } else {
-        const seeded = cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
-        setLiveFindings(seeded);
-        setFindings(seeded);
-        setSelectedFindingId('live-sec-9012-001');
+        setSelectedFindingId('');
       }
 
-      // If backend is online, attempt fetching freshest findings
-      fetch(`${backendUrl}/findings`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && Array.isArray(data) && data.length > 0) {
-            setLiveFindings(data);
-            setFindings(data);
-          }
-        })
-        .catch(() => {});
+      // If backend is online and account connected, fetch fresh live findings
+      if (accountConfig.isLive && accountConfig.isConnected) {
+        fetch(`${backendUrl}/findings?mode=live`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data && Array.isArray(data)) {
+              setLiveFindings(data);
+              setFindings(data);
+              if (data.length > 0) {
+                setSelectedFindingId(data[0].id);
+                setLiveScanStatus('completed');
+              } else {
+                setLiveScanStatus('empty');
+              }
+            }
+          })
+          .catch(() => {
+            setIsStaleData(true);
+          });
+      }
     } else {
-      // Revert to active demo scenario
+      // Demo mode: Return to active scenario demo data
+      setLiveErrorMessage(null);
       if (activeScenario === 'student') {
-        setFindings(cloneFindings(STUDENT_FINDINGS));
-        setSelectedFindingId('finding-student-001');
+        const studentData = cloneFindings(STUDENT_FINDINGS);
+        setFindings(studentData);
+        setSelectedFindingId(studentData[0]?.id || 'finding-student-001');
       } else {
-        setFindings(cloneFindings(FINTECH_FINDINGS));
-        setSelectedFindingId('finding-001');
+        const fintechData = cloneFindings(FINTECH_FINDINGS);
+        setFindings(fintechData);
+        setSelectedFindingId(fintechData[0]?.id || 'finding-001');
       }
     }
   };
@@ -150,37 +174,43 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortOption, setSortOption] = useState<SortOption>('severity');
 
-  // Switch scenario datasets cleanly
+  // Switch demo scenarios (applicable in demo mode)
   const setScenario = (scenario: ScenarioType) => {
     setActiveScenarioState(scenario);
     setResolvedFindingIds([]);
     setAuditRecords([]);
     setActiveHash('sha256-pending-authorization');
 
-    if (scenario === 'student') {
-      setFindings(cloneFindings(STUDENT_FINDINGS));
-      setSelectedFindingId('finding-student-001');
-      setAccountConfig({
-        accountId: STUDENT_ACCOUNT.accountId,
-        alias: STUDENT_ACCOUNT.alias,
-        roleName: 'CloudPilotAuditRole',
-        region: STUDENT_ACCOUNT.region,
-        isConnected: true,
-        isConnecting: false,
-        connectionError: null
-      });
-    } else {
-      setFindings(cloneFindings(FINTECH_FINDINGS));
-      setSelectedFindingId('finding-001');
-      setAccountConfig({
-        accountId: FINTECH_ACCOUNT.accountId,
-        alias: FINTECH_ACCOUNT.alias,
-        roleName: 'CloudPilotAuditRole',
-        region: FINTECH_ACCOUNT.region,
-        isConnected: true,
-        isConnecting: false,
-        connectionError: null
-      });
+    if (appMode === 'demo') {
+      if (scenario === 'student') {
+        const data = cloneFindings(STUDENT_FINDINGS);
+        setFindings(data);
+        setSelectedFindingId(data[0]?.id || 'finding-student-001');
+        setAccountConfig({
+          accountId: STUDENT_ACCOUNT.accountId,
+          alias: STUDENT_ACCOUNT.alias,
+          roleName: 'CloudPilotAuditRole',
+          region: STUDENT_ACCOUNT.region,
+          isConnected: true,
+          isConnecting: false,
+          connectionError: null,
+          isLive: false
+        });
+      } else {
+        const data = cloneFindings(FINTECH_FINDINGS);
+        setFindings(data);
+        setSelectedFindingId(data[0]?.id || 'finding-001');
+        setAccountConfig({
+          accountId: FINTECH_ACCOUNT.accountId,
+          alias: FINTECH_ACCOUNT.alias,
+          roleName: 'CloudPilotAuditRole',
+          region: FINTECH_ACCOUNT.region,
+          isConnected: true,
+          isConnecting: false,
+          connectionError: null,
+          isLive: false
+        });
+      }
     }
   };
 
@@ -188,25 +218,40 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setAccountConfig((prev) => ({ ...prev, ...cfg }));
   };
 
+  // Connect AWS Account: Real STS connection with fail-closed semantics in live mode
   const connectAccount = async (custom = false): Promise<{ success: boolean; error?: string }> => {
     updateAccountConfig({ isConnecting: true, connectionError: null });
+    setLiveErrorMessage(null);
 
-    // Validate account ID
     const sanitizedId = accountConfig.accountId.replace(/\D/g, '');
     if (sanitizedId.length !== 12) {
       const err = 'AWS Account ID must be exactly 12 numeric digits (e.g. 123456789012).';
       updateAccountConfig({ isConnecting: false, connectionError: err, isConnected: false });
+      setLiveConnectionStatus('failed');
       return { success: false, error: err };
     }
 
     if (!accountConfig.roleName.trim()) {
       const err = 'IAM Role name is required (e.g. CloudPilotAuditRole).';
       updateAccountConfig({ isConnecting: false, connectionError: err, isConnected: false });
+      setLiveConnectionStatus('failed');
       return { success: false, error: err };
     }
 
-    // Try connecting to real backend if online and custom/live
-    if (isBackendOnline && custom) {
+    const isLiveAttempt = appMode === 'live' || custom;
+
+    // ── Live Mode Connection ──
+    if (isLiveAttempt) {
+      setLiveConnectionStatus('connecting');
+
+      if (!isBackendOnline) {
+        const err = 'CloudPilot backend service is unreachable. Live AWS connection cannot be established.';
+        updateAccountConfig({ isConnecting: false, connectionError: err, isConnected: false, isLive: false });
+        setLiveConnectionStatus('failed');
+        setLiveErrorMessage(err);
+        return { success: false, error: err };
+      }
+
       try {
         const res = await fetch(`${backendUrl}/accounts/connect`, {
           method: 'POST',
@@ -215,79 +260,138 @@ export function DemoProvider({ children }: { children: ReactNode }) {
             account_id: sanitizedId,
             role_arn: `arn:aws:iam::${sanitizedId}:role/${accountConfig.roleName}`,
             external_id: accountConfig.externalId || 'cp-tenant-9042-demo',
-            region: accountConfig.region
+            region: accountConfig.region,
+            mode: 'live'
           })
         });
+
         if (res.ok) {
+          const data = await res.json();
           updateAccountConfig({
             accountId: sanitizedId,
-            alias: accountConfig.alias || `AWS Live (${accountConfig.region})`,
+            alias: data.alias || accountConfig.alias || `AWS Live (${accountConfig.region})`,
             isConnecting: false,
             isConnected: true,
             connectionError: null,
             isLive: true
           });
+          setLiveConnectionStatus('connected');
           setAppMode('live');
           return { success: true };
+        } else {
+          const errorData = await res.json().catch(() => ({ detail: 'AWS STS AssumeRole handshake failed.' }));
+          const errMsg = errorData.detail || `AWS Connection failed with status ${res.status}.`;
+          updateAccountConfig({
+            isConnecting: false,
+            connectionError: errMsg,
+            isConnected: false,
+            isLive: false
+          });
+          setLiveConnectionStatus('failed');
+          setLiveErrorMessage(errMsg);
+          return { success: false, error: errMsg };
         }
       } catch (err) {
-        console.warn('Backend connect failed, falling back to simulated STS handshake:', err);
+        const errMsg = `Network error connecting to CloudPilot backend: ${err instanceof Error ? err.message : String(err)}`;
+        updateAccountConfig({
+          isConnecting: false,
+          connectionError: errMsg,
+          isConnected: false,
+          isLive: false
+        });
+        setLiveConnectionStatus('failed');
+        setLiveErrorMessage(errMsg);
+        return { success: false, error: errMsg };
       }
     }
 
-    // Standard client-side STS handshake simulation
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-
+    // ── Explicit Demo Mode Handshake ──
+    await new Promise((resolve) => setTimeout(resolve, 800));
     updateAccountConfig({
       accountId: sanitizedId,
-      alias: custom ? `${accountConfig.alias || 'Live AWS Account'}` : accountConfig.alias,
+      alias: accountConfig.alias,
       isConnecting: false,
       isConnected: true,
       connectionError: null,
-      isLive: custom
+      isLive: false
     });
-
-    if (custom) {
-      setAppMode('live');
-    }
-
     return { success: true };
   };
 
+  // Scan Live AWS: Queries real AWS via backend. Never falls back to mock findings in live mode.
   const scanLiveAWS = async (): Promise<{ success: boolean; count?: number; error?: string }> => {
-    if (isBackendOnline) {
-      try {
-        const res = await fetch(`${backendUrl}/discovery/scan`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_id: accountConfig.accountId,
-            region: accountConfig.region
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.findings && Array.isArray(data.findings) && data.findings.length > 0) {
-            setLiveFindings(data.findings);
-            setFindings(data.findings);
-            return { success: true, count: data.findings.length };
-          }
-        }
-      } catch (err) {
-        console.warn('Backend scan failed, falling back to seeded live findings:', err);
-      }
+    if (appMode !== 'live') {
+      return { success: true, count: findings.length };
     }
 
-    // Graceful fallback simulation
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    const seeded = cloneFindings(LIVE_AWS_SEEDED_FINDINGS);
-    setLiveFindings(seeded);
-    setFindings(seeded);
-    return { success: true, count: seeded.length };
+    setLiveScanStatus('scanning');
+    setLiveErrorMessage(null);
+
+    if (!isBackendOnline) {
+      const err = 'CloudPilot backend service is unreachable. Unable to trigger live scan.';
+      setLiveScanStatus('service_unavailable');
+      setLiveErrorMessage(err);
+      return { success: false, error: err };
+    }
+
+    try {
+      const sanitizedId = accountConfig.accountId.replace(/\D/g, '');
+      const res = await fetch(`${backendUrl}/discovery/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: sanitizedId,
+          region: accountConfig.region,
+          mode: 'live'
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const discovered = data.findings || [];
+        setLiveFindings(discovered);
+        setFindings(discovered);
+        setLastScannedAt(data.scanned_at || new Date().toISOString());
+        setIsStaleData(false);
+
+        if (discovered.length === 0) {
+          setLiveScanStatus('empty');
+          setSelectedFindingId('');
+          return { success: true, count: 0 };
+        }
+
+        setLiveScanStatus('completed');
+        setSelectedFindingId(discovered[0].id);
+        return { success: true, count: discovered.length };
+      } else {
+        const errorData = await res.json().catch(() => ({ detail: 'Live scan request rejected by backend.' }));
+        const errMsg = errorData.detail || `Scan failed with HTTP ${res.status}`;
+        setLiveScanStatus('failed');
+        setLiveErrorMessage(errMsg);
+        setLiveFindings([]);
+        setFindings([]);
+        setSelectedFindingId('');
+        return { success: false, error: errMsg };
+      }
+    } catch (err) {
+      const errMsg = `Scan failed: ${err instanceof Error ? err.message : String(err)}`;
+      setLiveScanStatus('failed');
+      setLiveErrorMessage(errMsg);
+      setLiveFindings([]);
+      setFindings([]);
+      setSelectedFindingId('');
+      return { success: false, error: errMsg };
+    }
   };
 
   const disconnectAccount = () => {
-    updateAccountConfig({ isConnected: false });
+    updateAccountConfig({ isConnected: false, isLive: false });
+    setLiveConnectionStatus('disconnected');
+    setLiveFindings([]);
+    if (appMode === 'live') {
+      setFindings([]);
+      setSelectedFindingId('');
+    }
   };
 
   // ─── Dynamic Metrics derived from active state ──────────────────────────────
@@ -304,58 +408,95 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     .filter((f) => f.category === 'cost' && f.estimatedMonthlyCost)
     .reduce((sum, f) => sum + (f.estimatedMonthlyCost || 0), 0);
 
-  // Security score: dynamic jump based on resolved high/critical issues
-  const baseScore = isLive ? 38 : (isStudent ? 42 : 34);
-  const scoreBoost = resolvedFindingIds.reduce((boost, id) => {
-    if (id === 'live-sec-9012-001') return boost + 48;
-    if (id === 'live-cost-9012-002') return boost + 8;
-    if (id === 'live-cost-9012-003') return boost + 10;
-    if (id === 'finding-001') return boost + 38;
-    if (id === 'finding-002') return boost + 8;
-    if (id === 'finding-003') return boost + 6;
-    if (id === 'finding-student-001') return boost + 46;
-    if (id === 'finding-student-002') return boost + 35;
-    if (id === 'finding-student-003') return boost + 12;
-    return boost + 10;
-  }, 0);
-  const securityScore = Math.min(98, baseScore + scoreBoost);
+  // Security score
+  const baseScore = isLive ? (findings.length === 0 ? 100 : 45) : (isStudent ? 42 : 34);
+  const scoreBoost = resolvedFindingIds.length * 15;
+  const securityScore = Math.min(100, baseScore + scoreBoost);
 
   const getActiveFinding = (): Finding => {
-    return findings.find((f) => f.id === selectedFindingId) || findings[0];
+    return findings.find((f) => f.id === selectedFindingId) || findings[0] || ({} as Finding);
   };
 
   const getFindingById = (id: string): Finding | undefined => {
     return findings.find((f) => f.id === id);
   };
 
-  // Approve action: actively updates finding status, computes genuine SHA-256 hash, creates audit record
+  // Approve action: dispatches to real remediation engine in live mode
   const approveRemediation = async (targetId?: string) => {
     const findingToApprove = targetId
       ? findings.find((f) => f.id === targetId) || getActiveFinding()
       : getActiveFinding();
+
+    if (!findingToApprove || !findingToApprove.id) {
+      throw new Error('No finding selected for approval.');
+    }
 
     if (findingToApprove.isSafetyBlocked) {
       throw new Error(`Cannot authorize: ${findingToApprove.blockedReason || 'Blocked by safety check'}`);
     }
 
     const now = new Date().toISOString();
-    const requestId = `req-aws-${Math.random().toString(36).substring(2, 8)}-${Date.now().toString(36)}`;
+    const actorEmail = 'operator@cloudpilot.io';
 
-    // Canonical representation for data integrity verification
-    const canonicalPayload = `${findingToApprove.id}|${findingToApprove.resource.id}|${now}|${requestId}|chetan@cloudpilot.io`;
+    // ── Live Mode Execution Path ──
+    if (appMode === 'live') {
+      if (!isBackendOnline) {
+        throw new Error('CloudPilot backend service is unreachable. Live remediation cannot be executed.');
+      }
+
+      const res = await fetch(`${backendUrl}/findings/${findingToApprove.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          finding_id: findingToApprove.id,
+          user_email: actorEmail,
+          mode: 'live'
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || data.outcome !== 'success') {
+        const errorDetail = data.error_details || data.detail || 'Remediation failed or state verification rejected.';
+        throw new Error(`Live remediation failed: ${errorDetail}`);
+      }
+
+      // Live mutation and verification SUCCEEDED!
+      setActiveHash(data.integrity_hash);
+      setFindings((prev) =>
+        prev.map((f) =>
+          f.id === findingToApprove.id
+            ? { ...f, status: 'resolved' as const, afterState: data.after_state || f.afterState }
+            : f
+        )
+      );
+      setResolvedFindingIds((prev) => Array.from(new Set([...prev, findingToApprove.id])));
+
+      const newRecord: AuditRecord = {
+        id: `audit-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
+        findingId: findingToApprove.id,
+        scenario: 'AWS Live (STS AssumeRole)',
+        action: data.action || `${findingToApprove.operation} — ${findingToApprove.title}`,
+        resource: `${findingToApprove.resource?.id} (${findingToApprove.resource?.name}, ${findingToApprove.resource?.region})`,
+        authorizedBy: actorEmail,
+        authorizedAt: now,
+        executedAt: data.timestamp || now,
+        awsResponse: `200 OK — RequestId: ${data.aws_request_id}`,
+        outcome: 'success',
+        beforeState: data.before_state || findingToApprove.beforeState,
+        afterState: data.after_state || findingToApprove.afterState,
+        canonicalPayload: data.canonical_payload,
+        integrityHash: data.integrity_hash
+      };
+      setAuditRecords((prev) => [newRecord, ...prev]);
+      return;
+    }
+
+    // ── Demo Mode Execution Path ──
+    const requestId = `demo-req-${Math.random().toString(36).substring(2, 8)}-${Date.now().toString(36)}`;
+    const canonicalPayload = `${findingToApprove.id}|${findingToApprove.resource?.id}|${now}|${requestId}|${actorEmail}`;
     const computedHash = await computeSHA256(canonicalPayload);
     setActiveHash(computedHash);
 
-    // If in live mode and backend is online, notify backend asynchronously
-    if (appMode === 'live' && isBackendOnline) {
-      fetch(`${backendUrl}/findings/${findingToApprove.id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_email: 'chetan@cloudpilot.io' })
-      }).catch((err) => console.warn('Backend approval sync warning:', err));
-    }
-
-    // Update findings array to resolved
     setFindings((prev) =>
       prev.map((f) =>
         f.id === findingToApprove.id
@@ -363,21 +504,17 @@ export function DemoProvider({ children }: { children: ReactNode }) {
           : f
       )
     );
-
     setResolvedFindingIds((prev) => Array.from(new Set([...prev, findingToApprove.id])));
 
-    // Create real audit record
     const newRecord: AuditRecord = {
       id: `audit-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
       findingId: findingToApprove.id,
-      scenario: (appMode === 'live' || findingToApprove.id.startsWith('live-'))
-        ? 'AWS Live (STS AssumeRole)'
-        : (isStudent ? 'Student ML Research Sandbox' : 'FinTech MVP Dev'),
+      scenario: isStudent ? 'Student ML Research Sandbox' : 'FinTech MVP Dev',
       action: `${findingToApprove.operation} — ${findingToApprove.title}`,
-      resource: `${findingToApprove.resource.id} (${findingToApprove.resource.name}, ${findingToApprove.resource.region})`,
-      authorizedBy: 'chetan@cloudpilot.io',
+      resource: `${findingToApprove.resource?.id} (${findingToApprove.resource?.name}, ${findingToApprove.resource?.region})`,
+      authorizedBy: actorEmail,
       authorizedAt: now,
-      executedAt: new Date(Date.now() + 3200).toISOString(),
+      executedAt: new Date(Date.now() + 1500).toISOString(),
       awsResponse: `200 OK — RequestId: ${requestId}`,
       outcome: 'success',
       beforeState: findingToApprove.beforeState,
@@ -385,11 +522,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       canonicalPayload,
       integrityHash: computedHash
     };
-
     setAuditRecords((prev) => [newRecord, ...prev]);
   };
 
-  // Full demo reset back to original state
   const resetDemo = () => {
     setResolvedFindingIds([]);
     setAuditRecords([]);
@@ -399,54 +534,30 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setSearchQuery('');
     setSortOption('severity');
 
-    if (activeScenario === 'student') {
-      setFindings(cloneFindings(STUDENT_FINDINGS));
-      setSelectedFindingId('finding-student-001');
-      setAccountConfig({
-        accountId: STUDENT_ACCOUNT.accountId,
-        alias: STUDENT_ACCOUNT.alias,
-        roleName: 'CloudPilotAuditRole',
-        region: STUDENT_ACCOUNT.region,
-        isConnected: true,
-        isConnecting: false,
-        connectionError: null
-      });
+    if (appMode === 'live') {
+      setLiveFindings([]);
+      setFindings([]);
+      setSelectedFindingId('');
+      setLiveScanStatus('idle');
+      setLiveConnectionStatus('disconnected');
+      setLiveErrorMessage(null);
     } else {
-      setFindings(cloneFindings(FINTECH_FINDINGS));
-      setSelectedFindingId('finding-001');
-      setAccountConfig({
-        accountId: FINTECH_ACCOUNT.accountId,
-        alias: FINTECH_ACCOUNT.alias,
-        roleName: 'CloudPilotAuditRole',
-        region: FINTECH_ACCOUNT.region,
-        isConnected: true,
-        isConnecting: false,
-        connectionError: null
-      });
+      if (activeScenario === 'student') {
+        const data = cloneFindings(STUDENT_FINDINGS);
+        setFindings(data);
+        setSelectedFindingId(data[0]?.id || 'finding-student-001');
+      } else {
+        const data = cloneFindings(FINTECH_FINDINGS);
+        setFindings(data);
+        setSelectedFindingId(data[0]?.id || 'finding-001');
+      }
     }
   };
 
-  // Genuine CSV Exporter (downloads real file via Blob)
   const exportAuditCSV = () => {
     const scenarioName = isStudent ? 'Student ML Research Sandbox' : 'FinTech MVP Dev';
-    const recordsToExport: AuditRecord[] = auditRecords.length > 0 ? auditRecords : [
-      {
-        id: 'audit-demo-initial',
-        findingId: 'finding-001',
-        scenario: scenarioName,
-        action: 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
-        resource: 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
-        authorizedBy: 'chetan@cloudpilot.io',
-        authorizedAt: new Date().toISOString(),
-        executedAt: new Date().toISOString(),
-        awsResponse: '200 OK — RequestId: req-aws-9042b-fintech-mumbai',
-        outcome: 'success',
-        beforeState: 'TCP:22 from 0.0.0.0/0: PRESENT',
-        afterState: 'TCP:22 from 0.0.0.0/0: REMOVED (verified)',
-        canonicalPayload: 'finding-001|sg-0a1b2c3d4e5f|initial-seed|chetan@cloudpilot.io',
-        integrityHash: activeHash
-      }
-    ];
+    const recordsToExport: AuditRecord[] = auditRecords;
+    if (recordsToExport.length === 0) return;
 
     const headers = [
       'Audit ID',
@@ -487,21 +598,20 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `cloudpilot-audit-report-${activeScenario}-${Date.now()}.csv`);
+    link.setAttribute('download', `cloudpilot-audit-report-${appMode}-${scenarioName.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  // Generate initial seed hash
   useEffect(() => {
     if (activeHash === 'sha256-pending-authorization') {
-      computeSHA256(`cloudpilot-initial-ledger-${activeScenario}-2026`).then((h) => {
+      computeSHA256(`cloudpilot-initial-ledger-${appMode}-${activeScenario}-2026`).then((h) => {
         setActiveHash(h);
       });
     }
-  }, [activeHash, activeScenario]);
+  }, [activeHash, activeScenario, appMode]);
 
   return (
     <DemoContext.Provider
@@ -512,6 +622,11 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         backendUrl,
         checkBackendHealth,
         scanLiveAWS,
+        liveScanStatus,
+        liveConnectionStatus,
+        liveErrorMessage,
+        lastScannedAt,
+        isStaleData,
         activeScenario,
         setScenario,
         findings,

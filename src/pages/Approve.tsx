@@ -11,7 +11,7 @@ import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
 import { sound } from '../utils/soundEngine';
 
-type Phase = 'review' | 'executing' | 'verified';
+type Phase = 'review' | 'executing' | 'verified' | 'failed';
 
 export default function Approve() {
   const navigate = useNavigate();
@@ -32,37 +32,51 @@ export default function Approve() {
   const [phase, setPhase] = useState<Phase>('review');
   const [confirmedFriction, setConfirmedFriction] = useState(false);
   const [executionStep, setExecutionStep] = useState(0);
+  const [remediationError, setRemediationError] = useState<string | null>(null);
 
   const effectivePhase: Phase = isAlreadyResolved ? 'verified' : phase;
 
   // 6 Believable Execution Stages
   const executionStages = [
-    { title: 'Rechecking Preconditions', detail: `Asserting target resource ${currentFinding.resource.id} state in ${currentFinding.resource.region}` },
+    { title: 'Rechecking Preconditions', detail: `Asserting target resource ${currentFinding.resource?.id} state in ${currentFinding.resource?.region}` },
     { title: 'Validating Human Cryptographic Signature', detail: `Cryptographic author attribution: ${user.name} (${user.email})` },
     { title: 'Assuming Scoped IAM Remediation Role', detail: `STS AssumeRole: arn:aws:iam::${accountConfig.accountId}:role/CloudPilotRemediationRole (ExternalId=${accountConfig.externalId || 'cp-tenant-9042-demo'})` },
     { title: 'Dispatching Atomic AWS API Call', detail: `Executing ${currentFinding.operation} with verified parameter payload` },
-    { title: 'Reading Back Verified Cloud State', detail: `Calling verification Describe query for ${currentFinding.resource.id}` },
+    { title: 'Reading Back Verified Cloud State', detail: `Calling verification Describe query for ${currentFinding.resource?.id}` },
     { title: 'Stamping Cryptographic Audit Ledger', detail: 'Computing WebCrypto SHA-256 seal and appending tamper-evident record' },
   ];
 
-  const startExecution = () => {
+  const startExecution = async () => {
     if (isBlocked) return;
     setPhase('executing');
     setExecutionStep(0);
+    setRemediationError(null);
 
-    let step = 0;
-    const interval = setInterval(() => {
-      step++;
-      setExecutionStep(step);
-      if (step >= executionStages.length) {
-        clearInterval(interval);
-        // Dispatch to global DemoContext to persist state
-        approveRemediation(currentFinding.id).then(() => {
-          sound.playSuccess();
-          setPhase('verified');
-        });
-      }
-    }, 420);
+    try {
+      setExecutionStep(1);
+      await new Promise((r) => setTimeout(r, 250));
+      setExecutionStep(2);
+      await new Promise((r) => setTimeout(r, 250));
+      setExecutionStep(3);
+      await new Promise((r) => setTimeout(r, 250));
+      setExecutionStep(4);
+
+      // Trigger real execution & independent verification via DemoContext -> Backend API
+      await approveRemediation(currentFinding.id);
+
+      setExecutionStep(5);
+      await new Promise((r) => setTimeout(r, 250));
+      setExecutionStep(6);
+      await new Promise((r) => setTimeout(r, 200));
+
+      sound.playSuccess();
+      setPhase('verified');
+    } catch (err: unknown) {
+      sound.playSnap();
+      const msg = err instanceof Error ? err.message : String(err);
+      setRemediationError(msg);
+      setPhase('failed');
+    }
   };
 
   return (
@@ -439,6 +453,53 @@ export default function Approve() {
                       navigate('/discover');
                     }}
                     className="btn btn-secondary btn-lg"
+                  >
+                    <span>Return to Investigation Workspace</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Phase 4: Execution Failed / Verification Rejected */}
+          {effectivePhase === 'failed' && (
+            <motion.div
+              key="failed"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
+            >
+              <div className="apple-card" style={{ textAlign: 'center', padding: '36px 24px', background: 'rgba(255, 59, 48, 0.03)', borderColor: 'rgba(255, 59, 48, 0.3)' }}>
+                <div style={{ width: 64, height: 64, margin: '0 auto 16px', borderRadius: '50%', background: 'rgba(255, 59, 48, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={34} color="var(--apple-red)" />
+                </div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--apple-red)', marginBottom: 6 }}>
+                  Remediation Failed — Resource Unaltered
+                </h2>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 580, margin: '0 auto 16px', lineHeight: 1.6 }}>
+                  CloudPilot fails closed: the requested AWS operation or post-execution verification checks did not succeed. To ensure your cloud is not left in an uncertain state, this finding remains open.
+                </p>
+                {remediationError && (
+                  <div style={{ background: '#FFFFFF', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border-medium)', maxWidth: 620, margin: '0 auto 24px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--apple-red)' }}>
+                    {remediationError}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      setPhase('review');
+                    }}
+                    className="btn btn-secondary btn-lg"
+                  >
+                    <span>Retry Authorization</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      navigate('/discover');
+                    }}
+                    className="btn btn-ghost btn-lg"
                   >
                     <span>Return to Investigation Workspace</span>
                   </button>
