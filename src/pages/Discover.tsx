@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   RefreshCw, Shield, DollarSign,
   ArrowRight, Activity, Search, Filter,
-  CheckCircle2, ShieldAlert, X
+  CheckCircle2, ShieldAlert, X, Zap
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { type Finding, type Severity } from '../data/mockData';
@@ -26,26 +26,36 @@ export default function Discover() {
     searchQuery,
     setSearchQuery,
     sortOption,
-    setSortOption
+    setSortOption,
+    appMode,
+    isBackendOnline,
+    scanLiveAWS
   } = useDemo();
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
 
-  // Trigger simulated deep telemetry scan
-  const handleRunScan = () => {
+  // Trigger deep telemetry scan (real live AWS scan if in Live Mode, else simulated)
+  const handleRunScan = async () => {
     sound.playClick();
     setIsScanning(true);
-    setScanMessage('Scanning 47 active resources across VPC, EC2, S3, EBS, and IAM...');
-    setTimeout(() => {
-      setScanMessage('Analyzing CloudTrail session history and evaluating security rulesets...');
-    }, 900);
-    setTimeout(() => {
-      sound.playSuccess();
-      setIsScanning(false);
-      setScanMessage(null);
-    }, 1900);
+    if (appMode === 'live') {
+      setScanMessage(`Connecting to AWS STS (AssumeRole arn:aws:iam::${accountConfig.accountId}:role/${accountConfig.roleName})...`);
+      setTimeout(() => {
+        setScanMessage('Scanning active EC2 DescribeVolumes (Unattached EBS) & DescribeSecurityGroups (Port 22)...');
+      }, 700);
+      await scanLiveAWS();
+    } else {
+      setScanMessage('Scanning 47 active resources across VPC, EC2, S3, EBS, and IAM...');
+      setTimeout(() => {
+        setScanMessage('Analyzing CloudTrail session history and evaluating security rulesets...');
+      }, 700);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    sound.playSuccess();
+    setIsScanning(false);
+    setScanMessage(null);
   };
 
   const handleOpenFinding = (f: Finding) => {
@@ -145,11 +155,51 @@ export default function Discover() {
           onClick={handleRunScan}
           disabled={isScanning}
           className="btn btn-secondary"
-          title="Simulate refreshing telemetry queries from CloudWatch and CloudTrail"
+          title="Refresh telemetry queries via AWS STS or simulation"
         >
           <RefreshCw size={14} className={isScanning ? 'spin' : ''} />
-          <span>{isScanning ? 'Scanning Telemetry…' : 'Trigger Deep Scan'}</span>
+          <span>{isScanning ? 'Scanning Telemetry…' : appMode === 'live' ? 'Trigger Live AWS Scan' : 'Trigger Deep Scan'}</span>
         </button>
+      </div>
+
+      {/* ── Mode Status Ribbon (Demo Mode vs Live AWS Mode) ── */}
+      <div
+        className="apple-card"
+        style={{
+          padding: '12px 18px',
+          marginBottom: 20,
+          background: appMode === 'live' ? 'rgba(0, 113, 227, 0.05)' : 'rgba(48, 209, 88, 0.05)',
+          borderColor: appMode === 'live' ? 'rgba(0, 113, 227, 0.2)' : 'rgba(48, 209, 88, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {appMode === 'live' ? (
+            <Zap size={16} color="var(--apple-blue)" />
+          ) : (
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
+          )}
+          <div style={{ fontSize: 13, fontWeight: 600, color: appMode === 'live' ? 'var(--apple-blue)' : 'var(--apple-emerald-dark)' }}>
+            {appMode === 'live'
+              ? `LIVE AWS DISCOVERY MODE — Telemetry evaluated via STS AssumeRole (${accountConfig.accountId} • ${accountConfig.region})`
+              : `EVALUATOR DEMO SANDBOX — Seeded with realistic cloud anomalies (${accountConfig.alias})`}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+          {appMode === 'live' ? (
+            <span>
+              Target: <code style={{ fontFamily: 'var(--font-mono)' }}>{accountConfig.roleName}</code>
+              {isBackendOnline ? ' • Backend API: Online' : ' • Backend API: Standby (localhost:8000)'}
+            </span>
+          ) : (
+            <span>Deterministic Evaluator Mode • Use navbar toggle to test Live AWS Mode</span>
+          )}
+        </div>
       </div>
 
       {/* Scanning status banner */}

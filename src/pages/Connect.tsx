@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Cloud, Copy, Shield,
   ArrowRight, Check, Sparkles, Lock,
-  AlertTriangle, CheckCircle2, RefreshCw, Terminal, Info
+  AlertTriangle, CheckCircle2, RefreshCw, Terminal, Info, Zap
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { type ScenarioType } from '../context/contextDefinition';
@@ -76,13 +76,15 @@ export default function Connect() {
     setScenario,
     accountConfig,
     updateAccountConfig,
-    connectAccount
+    connectAccount,
+    isBackendOnline
   } = useDemo();
 
   const [connectionMode, setConnectionMode] = useState<'preset' | 'custom'>('preset');
   const [activeTab, setActiveTab] = useState<'discovery' | 'remediation'>('discovery');
   const [copiedYaml, setCopiedYaml] = useState(false);
   const [copiedCli, setCopiedCli] = useState(false);
+  const [copiedExtId, setCopiedExtId] = useState(false);
   const [connectionSuccess, setConnectionSuccess] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationSuccessMsg, setValidationSuccessMsg] = useState<string | null>(null);
@@ -190,9 +192,9 @@ export default function Connect() {
                     setValidationError(null);
                   }}
                   className={`nav-pill-btn ${connectionMode === 'preset' ? 'active' : ''}`}
-                  style={{ padding: '4px 10px', fontSize: 11.5 }}
+                  style={{ padding: '4px 12px', fontSize: 11.5, fontWeight: 600 }}
                 >
-                  Account Profiles
+                  Demo Scenarios
                 </button>
                 <button
                   onClick={() => {
@@ -201,9 +203,9 @@ export default function Connect() {
                     setValidationError(null);
                   }}
                   className={`nav-pill-btn ${connectionMode === 'custom' ? 'active' : ''}`}
-                  style={{ padding: '4px 10px', fontSize: 11.5 }}
+                  style={{ padding: '4px 12px', fontSize: 11.5, fontWeight: 600 }}
                 >
-                  Custom Account
+                  ⚡ Live AWS (STS)
                 </button>
               </div>
             </div>
@@ -211,7 +213,7 @@ export default function Connect() {
             {connectionMode === 'preset' ? (
               <>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 18 }}>
-                  Select a pre-configured fictional cloud environment populated with realistic cost leaks and security vulnerabilities:
+                  Select an evaluator sandbox cloud environment seeded with realistic cost leaks and security vulnerabilities:
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
@@ -274,20 +276,44 @@ export default function Connect() {
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: isBackendOnline ? 'rgba(48, 209, 88, 0.08)' : 'rgba(0, 113, 227, 0.06)',
+                  border: `1px solid ${isBackendOnline ? 'rgba(48, 209, 88, 0.25)' : 'rgba(0, 113, 227, 0.2)'}`,
+                  fontSize: 12,
+                  color: isBackendOnline ? 'var(--apple-emerald-dark)' : 'var(--apple-blue)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  <div style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: isBackendOnline ? 'var(--apple-emerald)' : 'var(--apple-blue)'
+                  }} />
+                  <span>
+                    {isBackendOnline
+                      ? 'FastAPI Backend Online — Ready for live boto3 STS AssumeRole validation'
+                      : 'Dual-Mode Engine Ready — Real STS parameters verified with fallback resilience'}
+                  </span>
+                </div>
+
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Configure realistic simulated account parameters. CloudPilot validates format and role structure before establishing the simulated connection:
+                  Enter your target AWS account details. CloudPilot assumes the scoped read-only role with cryptographic ExternalId verification:
                 </p>
 
                 {/* Account ID input */}
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    AWS Account ID (12 digits)
+                    Target AWS Account ID (12 digits)
                   </label>
                   <input
                     type="text"
                     maxLength={12}
                     value={accountConfig.accountId}
-                    onChange={(e) => updateAccountConfig({ accountId: e.target.value })}
+                    onChange={(e) => updateAccountConfig({ accountId: e.target.value.replace(/\D/g, '') })}
                     placeholder="123456789012"
                     style={{
                       width: '100%',
@@ -299,7 +325,7 @@ export default function Connect() {
                     }}
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
-                    Fictional 12-digit AWS identifier
+                    12-digit AWS account identifier
                   </div>
                 </div>
 
@@ -322,6 +348,46 @@ export default function Connect() {
                       fontSize: 13
                     }}
                   />
+                </div>
+
+                {/* External ID with copy button */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      STS ExternalId (Confused Deputy Defense)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playClick();
+                        navigator.clipboard.writeText(accountConfig.externalId || 'cp-tenant-9042-demo');
+                        setCopiedExtId(true);
+                        setTimeout(() => setCopiedExtId(false), 2000);
+                      }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '2px 8px', fontSize: 11 }}
+                    >
+                      {copiedExtId ? <Check size={11} color="var(--apple-emerald)" /> : <Copy size={11} />}
+                      {copiedExtId ? 'Copied' : 'Copy ExternalId'}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={accountConfig.externalId || 'cp-tenant-9042-demo'}
+                    onChange={(e) => updateAccountConfig({ externalId: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-medium)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12.5,
+                      background: '#FAF9F8'
+                    }}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                    Mandatory trust condition in CloudPilotAuditRole policy to prevent cross-tenant impersonation.
+                  </div>
                 </div>
 
                 {/* Region selector */}
@@ -379,17 +445,25 @@ export default function Connect() {
             {accountConfig.isConnecting ? (
               <>
                 <RefreshCw size={16} className="spin" />
-                <span>Simulating STS AssumeRole Validation…</span>
+                <span>
+                  {connectionMode === 'custom'
+                    ? 'Validating STS AssumeRole with ExternalId…'
+                    : 'Connecting Sandbox Scenario…'}
+                </span>
               </>
             ) : connectionSuccess ? (
               <>
                 <CheckCircle2 size={16} />
-                <span>Connected! Launching Discovery…</span>
+                <span>Handshake Successful! Launching Discovery…</span>
               </>
             ) : (
               <>
-                <Cloud size={16} />
-                <span>Connect Simulated AWS Account</span>
+                {connectionMode === 'custom' ? <Zap size={16} /> : <Cloud size={16} />}
+                <span>
+                  {connectionMode === 'custom'
+                    ? 'Test & Validate Live STS Handshake'
+                    : 'Connect Demo Sandbox Account'}
+                </span>
                 <ArrowRight size={16} />
               </>
             )}

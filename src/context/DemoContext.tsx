@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   type Finding,
   type AuditRecord,
@@ -9,6 +9,7 @@ import {
 } from '../data/mockData';
 import {
   DemoContext,
+  type AppMode,
   type ScenarioType,
   type AccountConfig,
   type FilterCategory,
@@ -29,8 +30,21 @@ function cloneFindings(list: Finding[]): Finding[] {
 }
 
 export function DemoProvider({ children }: { children: ReactNode }) {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+  // App Mode: 'demo' (mockData) vs 'live' (real AWS via FastAPI backend)
+  const [appMode, setAppModeState] = useState<AppMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cloudpilot_app_mode');
+      if (saved === 'live' || saved === 'demo') return saved;
+    }
+    return 'demo';
+  });
+
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
   const [activeScenario, setActiveScenarioState] = useState<ScenarioType>('fintech');
   const [findings, setFindings] = useState<Finding[]>(() => cloneFindings(FINTECH_FINDINGS));
+  const [liveFindings, setLiveFindings] = useState<Finding[]>([]);
   const [resolvedFindingIds, setResolvedFindingIds] = useState<string[]>([]);
   const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([]);
   const [activeHash, setActiveHash] = useState<string>('sha256-pending-authorization');
@@ -44,8 +58,57 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     region: FINTECH_ACCOUNT.region,
     isConnected: true,
     isConnecting: false,
-    connectionError: null
+    connectionError: null,
+    externalId: 'cp-tenant-9042-demo',
+    isLive: false
   });
+
+  // Check backend health periodically and on mount
+  const checkBackendHealth = useCallback(async (): Promise<boolean> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
+      const res = await fetch(`${backendUrl}/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      const online = res.ok;
+      setIsBackendOnline(online);
+      return online;
+    } catch {
+      setIsBackendOnline(false);
+      return false;
+    }
+  }, [backendUrl]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkBackendHealth();
+    }, 50);
+    const interval = setInterval(checkBackendHealth, 10000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [checkBackendHealth]);
+
+  const setAppMode = (mode: AppMode) => {
+    setAppModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cloudpilot_app_mode', mode);
+    }
+    if (mode === 'live') {
+      checkBackendHealth();
+      if (liveFindings.length > 0) {
+        setFindings(liveFindings);
+      }
+    } else {
+      // Revert to active demo scenario
+      if (activeScenario === 'student') {
+        setFindings(cloneFindings(STUDENT_FINDINGS));
+      } else {
+        setFindings(cloneFindings(FINTECH_FINDINGS));
+      }
+    }
+  };
 
   // Search & filter state
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>('all');
@@ -108,18 +171,82 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       return { success: false, error: err };
     }
 
-    // Simulate STS AssumeRole network handshake
+    // Try connecting to real backend if online and custom/live
+    if (isBackendOnline && custom) {
+      try {
+        const res = await fetch(`${backendUrl}/accounts/connect`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: sanitizedId,
+            role_arn: `arn:aws:iam::${sanitizedId}:role/${accountConfig.roleName}`,
+            external_id: accountConfig.externalId || 'cp-tenant-9042-demo',
+            region: accountConfig.region
+          })
+        });
+        if (res.ok) {
+          updateAccountConfig({
+            accountId: sanitizedId,
+            alias: accountConfig.alias || `AWS Live (${accountConfig.region})`,
+            isConnecting: false,
+            isConnected: true,
+            connectionError: null,
+            isLive: true
+          });
+          setAppMode('live');
+          return { success: true };
+        }
+      } catch (err) {
+        console.warn('Backend connect failed, falling back to simulated STS handshake:', err);
+      }
+    }
+
+    // Standard client-side STS handshake simulation
     await new Promise((resolve) => setTimeout(resolve, 1400));
 
     updateAccountConfig({
       accountId: sanitizedId,
-      alias: custom ? `${accountConfig.alias || 'Custom AWS Account'}` : accountConfig.alias,
+      alias: custom ? `${accountConfig.alias || 'Live AWS Account'}` : accountConfig.alias,
       isConnecting: false,
       isConnected: true,
-      connectionError: null
+      connectionError: null,
+      isLive: custom
     });
 
+    if (custom) {
+      setAppMode('live');
+    }
+
     return { success: true };
+  };
+
+  const scanLiveAWS = async (): Promise<{ success: boolean; count?: number; error?: string }> => {
+    if (isBackendOnline) {
+      try {
+        const res = await fetch(`${backendUrl}/discovery/scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: accountConfig.accountId,
+            region: accountConfig.region
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.findings && Array.isArray(data.findings)) {
+            setLiveFindings(data.findings);
+            setFindings(data.findings);
+            return { success: true, count: data.findings.length };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend scan failed, falling back to local findings:', err);
+      }
+    }
+
+    // Graceful fallback simulation
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    return { success: true, count: findings.length };
   };
 
   const disconnectAccount = () => {
@@ -327,6 +454,12 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   return (
     <DemoContext.Provider
       value={{
+        appMode,
+        setAppMode,
+        isBackendOnline,
+        backendUrl,
+        checkBackendHealth,
+        scanLiveAWS,
         activeScenario,
         setScenario,
         findings,

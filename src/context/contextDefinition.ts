@@ -6,6 +6,8 @@ export type FilterCategory = 'all' | 'security' | 'cost';
 export type StatusFilter = 'all' | 'open' | 'resolved' | 'blocked';
 export type SortOption = 'severity' | 'savings' | 'newest';
 
+export type AppMode = 'demo' | 'live';
+
 export interface AccountConfig {
   accountId: string;
   alias: string;
@@ -14,9 +16,19 @@ export interface AccountConfig {
   isConnected: boolean;
   isConnecting: boolean;
   connectionError: string | null;
+  externalId?: string;
+  isLive?: boolean;
 }
 
 export interface DemoContextType {
+  // App Mode (Demo vs Live AWS)
+  appMode: AppMode;
+  setAppMode: (mode: AppMode) => void;
+  isBackendOnline: boolean;
+  backendUrl: string;
+  checkBackendHealth: () => Promise<boolean>;
+  scanLiveAWS: () => Promise<{ success: boolean; count?: number; error?: string }>;
+
   activeScenario: ScenarioType;
   setScenario: (scenario: ScenarioType) => void;
   findings: Finding[];

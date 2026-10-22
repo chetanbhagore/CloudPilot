@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Volume2, VolumeX, RotateCw, ChevronDown, Bell,
   Settings, LogOut, CheckCircle2, Shield,
-  AlertTriangle, Info, Plus
+  AlertTriangle, Info, Plus, Zap
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
@@ -11,7 +11,7 @@ import { sound } from '../utils/soundEngine';
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const { activeScenario, setScenario, accountConfig } = useDemo();
+  const { activeScenario, setScenario, accountConfig, appMode, setAppMode, isBackendOnline } = useDemo();
   const { user, logout, notifications, unreadCount, markNotificationRead, markAllNotificationsRead } = useAuth();
 
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
@@ -223,6 +223,105 @@ export default function Navbar() {
         }}>
           <Shield size={13} color="var(--apple-emerald-dark)" />
           <span>Two-Role IAM Active</span>
+        </div>
+
+        {/* ── Mode Switcher: Demo Mode ↔ Live AWS Mode ── */}
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            background: 'var(--surface-secondary)',
+            padding: '3px',
+            borderRadius: 9999,
+            border: '1px solid var(--border-medium)',
+            gap: 2
+          }}
+        >
+          <button
+            onClick={() => {
+              sound.playClick();
+              setAppMode('demo');
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: 9999,
+              border: 'none',
+              background: appMode === 'demo' ? '#FFFFFF' : 'transparent',
+              color: appMode === 'demo' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              fontWeight: appMode === 'demo' ? 600 : 500,
+              fontSize: 11.5,
+              cursor: 'pointer',
+              boxShadow: appMode === 'demo' ? 'var(--shadow-sm)' : 'none',
+              transition: 'all 160ms ease'
+            }}
+            title="Demo Mode: Presentation fallback using deterministic scenarios"
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: 'var(--apple-emerald)',
+                boxShadow: appMode === 'demo' ? '0 0 0 2px rgba(48, 209, 88, 0.25)' : 'none'
+              }}
+            />
+            <span>Demo Mode</span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playClick();
+              setAppMode('live');
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 10px',
+              borderRadius: 9999,
+              border: 'none',
+              background: appMode === 'live' ? 'var(--apple-blue)' : 'transparent',
+              color: appMode === 'live' ? '#FFFFFF' : 'var(--text-tertiary)',
+              fontWeight: appMode === 'live' ? 600 : 500,
+              fontSize: 11.5,
+              cursor: 'pointer',
+              boxShadow: appMode === 'live' ? '0 2px 8px rgba(0, 113, 227, 0.35)' : 'none',
+              transition: 'all 160ms ease'
+            }}
+            title="Live AWS Mode: Query real AWS account via STS AssumeRole"
+          >
+            <Zap size={12} fill={appMode === 'live' ? '#FFFFFF' : 'none'} />
+            <span>Live Mode</span>
+            {isBackendOnline ? (
+              <span
+                style={{
+                  fontSize: 9,
+                  background: appMode === 'live' ? 'rgba(255,255,255,0.25)' : 'var(--apple-emerald-light)',
+                  color: appMode === 'live' ? '#FFFFFF' : 'var(--apple-emerald-dark)',
+                  padding: '1px 5px',
+                  borderRadius: 9999,
+                  fontWeight: 700
+                }}
+              >
+                ONLINE
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: 9,
+                  background: appMode === 'live' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.05)',
+                  color: appMode === 'live' ? '#FFFFFF' : 'var(--text-tertiary)',
+                  padding: '1px 5px',
+                  borderRadius: 9999
+                }}
+              >
+                STANDBY
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
