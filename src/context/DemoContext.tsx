@@ -418,7 +418,11 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const securityScore = Math.min(100, baseScore + scoreBoost);
 
   const getActiveFinding = (): Finding => {
-    return findings.find((f) => f.id === selectedFindingId) || findings[0] || ({} as Finding);
+    return (
+      findings.find((f) => f.id === selectedFindingId) ||
+      findings[0] ||
+      FINTECH_FINDINGS[0]
+    );
   };
 
   const getFindingById = (id: string): Finding | undefined => {

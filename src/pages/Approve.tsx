@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2,
   ArrowRight, Lock, AlertTriangle,
-  FileText, Check
+  FileText, Check, Shield
 } from 'lucide-react';
 import SlideToApprove from '../components/SlideToApprove';
 import { useDemo } from '../context/useDemo';
@@ -26,6 +26,34 @@ export default function Approve() {
   } = useDemo();
 
   const currentFinding = getActiveFinding();
+
+  if (!currentFinding || !currentFinding.id || !currentFinding.resource) {
+    return (
+      <div className="page-container">
+        <div className="apple-card" style={{ maxWidth: 600, margin: '80px auto', textAlign: 'center', padding: '48px 32px' }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--apple-blue-light)', color: 'var(--apple-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Shield size={24} />
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>No Action Selected for Approval</h2>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+            Every remediation operation in CloudPilot is gated by human authorization and cryptographic verification. Select a finding to inspect its Safety Passport before authorizing changes.
+          </p>
+          <button
+            onClick={() => {
+              sound.playClick();
+              navigate('/discover');
+            }}
+            className="btn btn-primary"
+            style={{ margin: '0 auto' }}
+          >
+            <span>Go to Discover Workspace</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isAlreadyResolved = currentFinding.status === 'resolved' || resolvedFindingIds.includes(currentFinding.id);
   const isBlocked = currentFinding.status === 'blocked' || currentFinding.isSafetyBlocked;
   const canApprove = user.role !== 'Viewer' && (!user.permissions || user.permissions.includes('approve:remediation'));

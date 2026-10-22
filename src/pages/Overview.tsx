@@ -337,69 +337,94 @@ export default function Overview() {
         </div>
 
         {/* Priority Action Card */}
-        <div className="apple-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div className="section-title">Safety Passport™ Remediation Queue</div>
-              <span className={`badge ${isRemediated ? 'badge-success' : 'badge-high'}`}>
-                {isRemediated ? `${resolvedCount} Remediated ✓` : 'Sign-Off Required'}
-              </span>
+        {/* Priority Action Card */}
+        {findings.length > 0 && findings[0] && findings[0].resource ? (
+          <div className="apple-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div className="section-title">Safety Passport™ Remediation Queue</div>
+                <span className={`badge ${isRemediated ? 'badge-success' : 'badge-high'}`}>
+                  {isRemediated ? `${resolvedCount} Remediated ✓` : 'Sign-Off Required'}
+                </span>
+              </div>
+
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 16 }}>
+                {isRemediated ? (
+                  <span>Remediation completed and verified for selected finding. The cryptographic audit record has been appended to the ledger.</span>
+                ) : (
+                  <span>A Safety Passport has been generated for target <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: 4 }}>{findings[0].id}</code>. All 5 automated safety preconditions have passed. CloudPilot will never execute without explicit authorization.</span>
+                )}
+              </p>
+
+              <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span className={`badge ${resolvedFindingIds.includes(findings[0].id) ? 'badge-success' : 'badge-critical'}`}>
+                      {resolvedFindingIds.includes(findings[0].id) ? 'RESOLVED ✓' : 'CRITICAL'}
+                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{findings[0].title}</span>
+                  </div>
+                  {findings[0].estimatedSavings && (
+                    <span className="badge badge-success">
+                      Save ~${findings[0].estimatedSavings.toFixed(2)}/mo
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  Target: <span style={{ fontFamily: 'var(--font-mono)' }}>{findings[0].resource.id}</span> ({findings[0].resource.name}, {findings[0].resource.region})
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                  <span className="badge badge-success">✓ 0 Disrupted sessions</span>
+                  <span className="badge badge-success">✓ Rollback ready</span>
+                  <span className="badge badge-info">Operation: {findings[0].operation}</span>
+                </div>
+              </div>
             </div>
 
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 16 }}>
-              {isRemediated ? (
-                <span>Remediation completed and verified for selected finding. The cryptographic audit record has been appended to the ledger.</span>
-              ) : (
-                <span>A Safety Passport has been generated for target <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: 4 }}>{findings[0].id}</code>. All 5 automated safety preconditions have passed. CloudPilot will never execute without explicit authorization.</span>
-              )}
-            </p>
-
-            <div style={{ background: '#FAF9F8', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${resolvedFindingIds.includes(findings[0].id) ? 'badge-success' : 'badge-critical'}`}>
-                    {resolvedFindingIds.includes(findings[0].id) ? 'RESOLVED ✓' : 'CRITICAL'}
-                  </span>
-                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{findings[0].title}</span>
-                </div>
-                {findings[0].estimatedSavings && (
-                  <span className="badge badge-success">
-                    Save ~${findings[0].estimatedSavings.toFixed(2)}/mo
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                Target: <span style={{ fontFamily: 'var(--font-mono)' }}>{findings[0].resource.id}</span> ({findings[0].resource.name}, {findings[0].resource.region})
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                <span className="badge badge-success">✓ 0 Disrupted sessions</span>
-                <span className="badge badge-success">✓ Rollback ready</span>
-                <span className="badge badge-info">Operation: {findings[0].operation}</span>
-              </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => handleActionOnFinding(findings[0].id)}
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+              >
+                <span>{resolvedFindingIds.includes(findings[0].id) ? 'Review Safety Passport' : 'Inspect Safety Passport'}</span>
+                <ArrowRight size={14} />
+              </button>
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  setSelectedFindingId(findings[0].id);
+                  navigate(resolvedFindingIds.includes(findings[0].id) ? '/audit' : '/approve');
+                }}
+                className="btn btn-secondary"
+              >
+                <span>{resolvedFindingIds.includes(findings[0].id) ? 'View Audit Proof' : 'Slide to Approve'}</span>
+              </button>
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => handleActionOnFinding(findings[0].id)}
-              className="btn btn-primary"
-              style={{ flex: 1 }}
-            >
-              <span>{resolvedFindingIds.includes(findings[0].id) ? 'Review Safety Passport' : 'Inspect Safety Passport'}</span>
-              <ArrowRight size={14} />
-            </button>
+        ) : (
+          <div className="apple-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: '40px 24px' }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--apple-emerald-light)', color: 'var(--apple-emerald-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <CheckCircle2 size={26} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No Pending Remediation Blockers</div>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 360, marginBottom: 20 }}>
+              {appMode === 'live'
+                ? 'Your connected cloud account has 0 critical exposures pending authorization. Run a cloud discovery scan to query resources.'
+                : 'All cloud findings in this scenario are verified and safe. Zero unaddressed risks detected.'}
+            </p>
             <button
               onClick={() => {
                 sound.playClick();
-                setSelectedFindingId(findings[0].id);
-                navigate(resolvedFindingIds.includes(findings[0].id) ? '/audit' : '/approve');
+                navigate('/discover');
               }}
-              className="btn btn-secondary"
+              className="btn btn-primary"
             >
-              <span>{resolvedFindingIds.includes(findings[0].id) ? 'View Audit Proof' : 'Slide to Approve'}</span>
+              <span>{appMode === 'live' ? 'Run Cloud Discovery Scan' : 'Explore Discover Workspace'}</span>
+              <ArrowRight size={14} />
             </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── Prioritized Actionable Findings List ── */}
@@ -426,58 +451,69 @@ export default function Overview() {
         </div>
 
         <div>
-          {findings.map((f, idx) => {
-            const isResolved = f.status === 'resolved' || resolvedFindingIds.includes(f.id);
-            const isBlocked = f.status === 'blocked';
+          {findings.length === 0 ? (
+            <div style={{ padding: '36px 24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>No Actionable Findings Pending</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+                {appMode === 'live'
+                  ? 'Connect an AWS account or initiate a discovery scan to query resources.'
+                  : 'All findings in this environment have been resolved or verified.'}
+              </div>
+            </div>
+          ) : (
+            findings.map((f, idx) => {
+              const isResolved = f.status === 'resolved' || resolvedFindingIds.includes(f.id);
+              const isBlocked = f.status === 'blocked';
 
-            return (
-              <div
-                key={f.id}
-                style={{
-                  padding: '16px 24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 16,
-                  borderBottom: idx < findings.length - 1 ? '1px solid var(--border-subtle)' : 'none',
-                  background: isResolved ? '#FAFDFB' : '#FFFFFF'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: isResolved ? 'var(--apple-emerald)' : isBlocked ? 'var(--apple-amber)' : f.severity === 'critical' ? 'var(--apple-crimson)' : 'var(--apple-amber)' }} />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <span className={`badge ${isResolved ? 'badge-success' : isBlocked ? 'badge-high' : f.severity === 'critical' ? 'badge-critical' : 'badge-high'}`}>
-                        {isResolved ? 'RESOLVED ✓' : isBlocked ? 'SAFETY BLOCKED' : f.severity.toUpperCase()}
-                      </span>
-                      <span style={{ fontWeight: 600, fontSize: 13.5, color: isResolved ? 'var(--apple-emerald-dark)' : 'var(--text-primary)' }}>
-                        {f.title}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                      {f.resource.id} ({f.affectedService}) • {f.resource.region}
+              return (
+                <div
+                  key={f.id}
+                  style={{
+                    padding: '16px 24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    borderBottom: idx < findings.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                    background: isResolved ? '#FAFDFB' : '#FFFFFF'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: isResolved ? 'var(--apple-emerald)' : isBlocked ? 'var(--apple-amber)' : f.severity === 'critical' ? 'var(--apple-crimson)' : 'var(--apple-amber)' }} />
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                        <span className={`badge ${isResolved ? 'badge-success' : isBlocked ? 'badge-high' : f.severity === 'critical' ? 'badge-critical' : 'badge-high'}`}>
+                          {isResolved ? 'RESOLVED ✓' : isBlocked ? 'SAFETY BLOCKED' : f.severity.toUpperCase()}
+                        </span>
+                        <span style={{ fontWeight: 600, fontSize: 13.5, color: isResolved ? 'var(--apple-emerald-dark)' : 'var(--text-primary)' }}>
+                          {f.title}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                        {f.resource.id} ({f.affectedService}) • {f.resource.region}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  {f.estimatedSavings && (
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--apple-emerald-dark)' }}>
-                      ~${f.estimatedSavings.toFixed(2)}/mo
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handleActionOnFinding(f.id)}
-                    className={`btn btn-sm ${isResolved ? 'btn-secondary' : 'btn-primary'}`}
-                    style={{ padding: '6px 14px', fontSize: 12 }}
-                  >
-                    <span>{isResolved ? 'Inspect Audit' : isBlocked ? 'Review Blocker' : 'Safety Passport'}</span>
-                    <ArrowRight size={12} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {f.estimatedSavings && (
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--apple-emerald-dark)' }}>
+                        ~${f.estimatedSavings.toFixed(2)}/mo
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleActionOnFinding(f.id)}
+                      className={`btn btn-sm ${isResolved ? 'btn-secondary' : 'btn-primary'}`}
+                      style={{ padding: '6px 14px', fontSize: 12 }}
+                    >
+                      <span>{isResolved ? 'Inspect Audit' : isBlocked ? 'Review Blocker' : 'Safety Passport'}</span>
+                      <ArrowRight size={12} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
