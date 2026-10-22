@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
 from app.schemas import FindingModel, ResourceModel, SafetyCheck, TelemetryPoint
 from app.services.aws_sts import get_ec2_client
+from app.services.safety_passport import build_safety_passport
 
 try:
     from botocore.exceptions import ClientError, EndpointConnectionError
@@ -73,9 +74,8 @@ def scan_account_live(
                     # AWS Regional baseline pricing estimate ($0.08/GB for gp3 in ap-south-1)
                     monthly_cost = round(size_gb * 0.08, 2)
                     
-                    findings.append(
-                        FindingModel(
-                            id=f"live-ebs-{vol_id}",
+                    vol_finding = FindingModel(
+                        id=f"live-ebs-{vol_id}",
                             category="cost",
                             severity="high",
                             title=f"Unattached {vol_type.upper()} EBS Volume ({size_gb} GiB)",
@@ -151,7 +151,11 @@ def scan_account_live(
                             account_id=account_id,
                             scan_id=current_scan_id
                         )
-                    )
+                    vol_finding.passport = build_safety_passport(vol_finding)
+                    vol_finding.preconditions = vol_finding.passport.checks
+                    vol_finding.isSafetyBlocked = vol_finding.passport.is_safety_blocked
+                    vol_finding.blockedReason = vol_finding.passport.blocked_reason
+                    findings.append(vol_finding)
         except Exception as e:
             logger.error(f"[AWS Live Discovery] Error querying EBS volumes in {r}: {e}")
             region_error = str(e)
@@ -184,8 +188,7 @@ def scan_account_live(
                                     break
                     
                     if open_ssh_rules:
-                        findings.append(
-                            FindingModel(
+                        sg_finding = FindingModel(
                                 id=f"live-sg-{sg_id}",
                                 category="security",
                                 severity="critical",
@@ -260,7 +263,11 @@ def scan_account_live(
                                 account_id=account_id,
                                 scan_id=current_scan_id
                             )
-                        )
+                        sg_finding.passport = build_safety_passport(sg_finding)
+                        sg_finding.preconditions = sg_finding.passport.checks
+                        sg_finding.isSafetyBlocked = sg_finding.passport.is_safety_blocked
+                        sg_finding.blockedReason = sg_finding.passport.blocked_reason
+                        findings.append(sg_finding)
         except Exception as e:
             logger.error(f"[AWS Live Discovery] Error querying Security Groups in {r}: {e}")
             region_error = str(e)
@@ -386,3 +393,9 @@ def get_demo_scenario_findings(
             account_id=account_id
         )
     ]
+    for df in demo_findings:
+        df.passport = build_safety_passport(df)
+        df.preconditions = df.passport.checks
+        df.isSafetyBlocked = df.passport.is_safety_blocked
+        df.blockedReason = df.passport.blocked_reason
+    return demo_findings

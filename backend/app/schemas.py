@@ -38,13 +38,47 @@ class AccountConnectResponse(BaseModel):
     error_details: Optional[str] = None
 
 # ─── Finding & Telemetry Schemas (Matching Frontend Models) ────────────────────
+CheckType = Literal["aws_api", "local_policy", "assumption", "unsupported_placeholder"]
+CheckStatus = Literal["passed", "failed", "blocked", "stale", "unknown"]
+
 class SafetyCheck(BaseModel):
     label: str
     passed: bool
+    status: CheckStatus = "passed"
+    check_type: CheckType = "aws_api"
     detail: str
     isBlocking: Optional[bool] = False
     evidence_source: Optional[str] = None
     evaluated_at: Optional[str] = None
+    account_id: Optional[str] = None
+    region: Optional[str] = None
+    resource_id: Optional[str] = None
+    freshness_limit_seconds: int = 300
+
+class SafetyPassportModel(BaseModel):
+    passport_id: str
+    passport_version: int = 1
+    passport_hash: str
+    finding_id: str
+    account_id: str
+    region: str
+    resource_id: str
+    resource_type: str
+    operation: str
+    operation_params: Dict[str, str] = {}
+    canonical_param_hash: str
+    checks: List[SafetyCheck] = []
+    is_safety_blocked: bool = False
+    blocked_reason: Optional[str] = None
+    risk_level: Literal["low", "medium", "high", "critical"] = "low"
+    risk_factors: List[str] = []
+    generated_at: str
+    expires_at: str
+    freshness_limit_seconds: int = 300
+    is_stale: bool = False
+    rollback_guidance: List[str] = []
+    unverified_conditions: List[str] = []
+    execution_mode: ExecutionMode = "live"
 
 class TelemetryPoint(BaseModel):
     time: str
@@ -97,12 +131,15 @@ class FindingModel(BaseModel):
     verified_at: Optional[str] = None
     account_id: Optional[str] = None
     scan_id: Optional[str] = None
+    passport: Optional[SafetyPassportModel] = None
+    organization_id: Optional[str] = "org-acme-prod"
 
 class DiscoveryRequest(BaseModel):
     account_id: str
     region: str = "ap-south-1"
     regions: Optional[List[str]] = None
     mode: ExecutionMode = Field(default="live", description="Explicit execution mode ('live' or 'demo')")
+    organization_id: Optional[str] = "org-acme-prod"
 
 class DiscoveryResponse(BaseModel):
     success: bool
@@ -141,3 +178,33 @@ class ApproveResponse(BaseModel):
     verification_status: str = "verified"
     verified_at: Optional[str] = None
     error_details: Optional[str] = None
+
+# ─── Authentication & RBAC Schemas ─────────────────────────────────────────────
+UserRole = Literal["Viewer", "SecurityAnalyst", "DevOpsLead", "Admin", "Owner"]
+
+class UserProfileModel(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: UserRole
+    organization_id: str
+    organization_name: str
+    is_active: bool = True
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserProfileModel
+
+class AuthenticatedUser(BaseModel):
+    user_id: str
+    email: str
+    organization_id: str
+    role: UserRole
+    permissions: List[str]
+    is_demo: bool = False

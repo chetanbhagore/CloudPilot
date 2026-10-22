@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import health, accounts, discovery
+from app.routers import health, accounts, discovery, auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +27,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(accounts.router)
 app.include_router(discovery.router)
 
