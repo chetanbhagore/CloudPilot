@@ -4,7 +4,7 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: 'Owner' | 'Admin' | 'DevOps Lead' | 'Security Analyst';
+  role: 'Owner' | 'Admin' | 'DevOps Lead' | 'DevOpsLead' | 'Security Analyst' | 'SecurityAnalyst' | 'Viewer';
   organization: string;
   organizationSlug: string;
   avatar: string;
@@ -13,6 +13,9 @@ export interface UserProfile {
   joinedDate: string;
   activeAwsAccounts: number;
   maxAwsAccounts: number;
+  permissions?: string[];
+  token?: string;
+  isServerVerified?: boolean;
 }
 
 export interface TeamMember {
@@ -42,7 +45,7 @@ export interface AuthContextType {
   notifications: CloudNotification[];
   unreadCount: number;
   isAuthenticated: boolean;
-  login: (email: string, password?: string) => boolean;
+  login: (email: string, password?: string) => Promise<boolean> | boolean;
   logout: () => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;

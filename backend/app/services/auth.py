@@ -58,7 +58,8 @@ ROLE_PERMISSIONS: Dict[UserRole, List[str]] = {
         "view:audit",
         "view:passport",
         "scan:resources",
-        "approve:remediation"
+        "approve:remediation",
+        "execute:remediation"
     ],
     "Admin": [
         "view:findings",
@@ -67,6 +68,7 @@ ROLE_PERMISSIONS: Dict[UserRole, List[str]] = {
         "view:passport",
         "scan:resources",
         "approve:remediation",
+        "execute:remediation",
         "manage:accounts",
         "manage:users"
     ],
@@ -77,6 +79,7 @@ ROLE_PERMISSIONS: Dict[UserRole, List[str]] = {
         "view:passport",
         "scan:resources",
         "approve:remediation",
+        "execute:remediation",
         "manage:accounts",
         "manage:users",
         "manage:organization"

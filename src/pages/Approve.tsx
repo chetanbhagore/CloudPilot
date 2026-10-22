@@ -28,6 +28,7 @@ export default function Approve() {
   const currentFinding = getActiveFinding();
   const isAlreadyResolved = currentFinding.status === 'resolved' || resolvedFindingIds.includes(currentFinding.id);
   const isBlocked = currentFinding.status === 'blocked' || currentFinding.isSafetyBlocked;
+  const canApprove = user.role !== 'Viewer' && (!user.permissions || user.permissions.includes('approve:remediation'));
 
   const [phase, setPhase] = useState<Phase>('review');
   const [confirmedFriction, setConfirmedFriction] = useState(false);
@@ -47,7 +48,7 @@ export default function Approve() {
   ];
 
   const startExecution = async () => {
-    if (isBlocked) return;
+    if (isBlocked || !canApprove) return;
     setPhase('executing');
     setExecutionStep(0);
     setRemediationError(null);
@@ -254,32 +255,46 @@ export default function Approve() {
               </div>
 
               {/* Slide to Approve Interaction (Mouse, Touch, Keyboard) */}
-              <div className="apple-card" style={{ padding: 26, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Lock size={14} /> Explicit Authorization Gate (Press Enter or Slide to Sign)
+              {!canApprove ? (
+                <div className="apple-card" style={{ padding: 26, textAlign: 'center', background: 'rgba(255, 69, 58, 0.06)', borderColor: 'rgba(255, 69, 58, 0.3)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <Lock size={15} /> RBAC Authorization Restriction: Read-Only Role
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto 12px', lineHeight: 1.5 }}>
+                    Your authenticated account (<strong>{user.name}</strong>, <code>{user.email}</code>) has the <strong>{user.role}</strong> role. Under organizational security policy, only <strong>DevOps Lead</strong>, <strong>Admin</strong>, or <strong>Owner</strong> roles can authorize infrastructure modifications.
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+                    <span>🔒 Enforced server-side via token permissions. Contact your workspace admin to request approval privileges.</span>
+                  </div>
                 </div>
+              ) : (
+                <div className="apple-card" style={{ padding: 26, textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <Lock size={14} /> Explicit Authorization Gate (Press Enter or Slide to Sign)
+                  </div>
 
-                <SlideToApprove
-                  disabled={!confirmedFriction || isBlocked}
-                  onApprove={startExecution}
-                  text={isBlocked ? 'Blocked by Safety Engine' : confirmedFriction ? 'Slide or Press Enter to Authorize' : 'Confirm Checkbox Above to Unlock Slider'}
-                />
+                  <SlideToApprove
+                    disabled={!confirmedFriction || isBlocked}
+                    onApprove={startExecution}
+                    text={isBlocked ? 'Blocked by Safety Engine' : confirmedFriction ? 'Slide or Press Enter to Authorize' : 'Confirm Checkbox Above to Unlock Slider'}
+                  />
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 14, fontSize: 11.5, color: 'var(--text-tertiary)' }}>
-                  <span>Authorized by: <strong>{user.name}</strong> ({user.email})</span>
-                  <span>•</span>
-                  <button
-                    onClick={() => {
-                      sound.playClick();
-                      navigate('/passport');
-                    }}
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11.5, color: 'var(--text-secondary)', padding: '2px 8px' }}
-                  >
-                    Cancel & Return to Passport
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 14, fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+                    <span>Authorized by: <strong>{user.name}</strong> ({user.email})</span>
+                    <span>•</span>
+                    <button
+                      onClick={() => {
+                        sound.playClick();
+                        navigate('/passport');
+                      }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11.5, color: 'var(--text-secondary)', padding: '2px 8px' }}
+                    >
+                      Cancel & Return to Passport
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 

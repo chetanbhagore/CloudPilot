@@ -20,7 +20,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setError('Please enter your work email.');
@@ -30,27 +30,34 @@ export default function Login() {
     setIsLoading(true);
     sound.playClick();
 
-    setTimeout(() => {
-      login(email, password);
+    const ok = await login(email, password);
+    setIsLoading(false);
+    if (ok) {
       sound.playSnap();
-      setIsLoading(false);
       navigate('/');
-    }, 600);
+    } else {
+      sound.playWarning();
+      setError('Authentication failed. Invalid email/password or server unreachable.');
+    }
   };
 
-  const handleQuickLogin = (roleEmail: string, roleName: string) => {
+  const handleQuickLogin = async (roleEmail: string, roleName: string, rolePass: string = 'DevOpsLead2026!') => {
     setEmail(roleEmail);
     setName(roleName);
+    setPassword(rolePass);
     setError(null);
     setIsLoading(true);
     sound.playClick();
 
-    setTimeout(() => {
-      login(roleEmail);
+    const ok = await login(roleEmail, rolePass);
+    setIsLoading(false);
+    if (ok) {
       sound.playSnap();
-      setIsLoading(false);
       navigate('/');
-    }, 450);
+    } else {
+      sound.playWarning();
+      setError('Server authentication failed for pre-configured role.');
+    }
   };
 
   return (
@@ -238,14 +245,14 @@ export default function Login() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
-                onClick={() => handleQuickLogin('chetan@cloudpilot.io', 'Chetan Bhagore')}
+                onClick={() => handleQuickLogin('admin@acmecloud.io', 'Sarah Jenkins (Owner)', 'CloudPilotAdmin2026!')}
                 style={{
                   flex: 1,
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid var(--border-medium)',
                   background: '#FFFFFF',
-                  fontSize: 12,
+                  fontSize: 11.5,
                   fontWeight: 600,
                   color: 'var(--text-primary)',
                   cursor: 'pointer',
@@ -255,18 +262,18 @@ export default function Login() {
                 }}
               >
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
-                <span>Chetan (Owner)</span>
+                <span>Owner</span>
               </button>
               <button
                 type="button"
-                onClick={() => handleQuickLogin('sarah.j@acmecloud.io', 'Sarah Jenkins')}
+                onClick={() => handleQuickLogin('devops@acmecloud.io', 'Marcus Vance (DevOps)', 'DevOpsLead2026!')}
                 style={{
                   flex: 1,
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid var(--border-medium)',
                   background: '#FFFFFF',
-                  fontSize: 12,
+                  fontSize: 11.5,
                   fontWeight: 600,
                   color: 'var(--text-primary)',
                   cursor: 'pointer',
@@ -276,7 +283,28 @@ export default function Login() {
                 }}
               >
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-blue)' }} />
-                <span>Sarah (DevOps)</span>
+                <span>DevOps</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('viewer@acmecloud.io', 'Tom Bradley (Viewer)', 'ViewerOnly2026!')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-medium)',
+                  background: '#FFFFFF',
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-tertiary)' }} />
+                <span>Viewer</span>
               </button>
             </div>
           </div>
@@ -285,7 +313,7 @@ export default function Login() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
             <button
               type="button"
-              onClick={() => handleQuickLogin('chetan@cloudpilot.io', 'Chetan Bhagore')}
+              onClick={() => handleQuickLogin('devops@acmecloud.io', 'Marcus Vance (DevOps Lead)', 'DevOpsLead2026!')}
               style={{
                 width: '100%',
                 padding: '10px 16px',

@@ -241,7 +241,8 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
                   *Simulated historical telemetry curve for demonstration
                 </div>
               </div>
-            </div>
+            )}
+          </div>
 
             {/* Proposed Remediation & Preconditions */}
             <div style={{ background: '#FFFFFF', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>

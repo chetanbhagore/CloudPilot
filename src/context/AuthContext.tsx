@@ -93,6 +93,10 @@ const INITIAL_NOTIFICATIONS: CloudNotification[] = [
 ];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const backendUrl = typeof window !== 'undefined'
+    ? (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000')
+    : 'http://localhost:8000';
+
   const [user, setUser] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('cloudpilot_user');
     return saved ? JSON.parse(saved) : DEFAULT_USER;
@@ -100,7 +104,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const savedAuth = localStorage.getItem('cloudpilot_authenticated');
-    return savedAuth !== null ? JSON.parse(savedAuth) : true;
+    const token = localStorage.getItem('cloudpilot_jwt_token');
+    return savedAuth !== null ? JSON.parse(savedAuth) : !!token;
+  });
+
+  // Verify server identity on startup
+  useState(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('cloudpilot_jwt_token');
+      if (token) {
+        fetch(`${backendUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((me) => {
+            if (me && me.id) {
+              setUser((prev) => ({
+                ...prev,
+                id: me.id,
+                email: me.email,
+                name: me.name,
+                role: me.role,
+                organization: me.organization_id,
+                permissions: me.permissions,
+                isServerVerified: true
+              }));
+              setIsAuthenticated(true);
+            } else if (localStorage.getItem('cloudpilot_app_mode') === 'live') {
+              // Stale or revoked token in live mode fails closed
+              localStorage.removeItem('cloudpilot_jwt_token');
+              setIsAuthenticated(false);
+            }
+          })
+          .catch(() => {});
+      }
+    }
   });
 
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(INITIAL_TEAM);
@@ -108,24 +146,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const login = (email: string, _password?: string) => {
-    setIsAuthenticated(true);
-    localStorage.setItem('cloudpilot_authenticated', JSON.stringify(true));
-    if (email && email.includes('@')) {
-      const updatedUser: UserProfile = {
+  const login = async (email: string, password?: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${backendUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: password || '' })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('cloudpilot_jwt_token', data.access_token);
+        localStorage.setItem('cloudpilot_authenticated', JSON.stringify(true));
+        const verifiedUser: UserProfile = {
+          ...user,
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          role: data.user.role,
+          organization: data.user.organization_id,
+          permissions: data.user.permissions,
+          isServerVerified: true
+        };
+        setUser(verifiedUser);
+        localStorage.setItem('cloudpilot_user', JSON.stringify(verifiedUser));
+        setIsAuthenticated(true);
+        return true;
+      }
+    } catch (_err) {
+      // Backend unavailable fallback
+    }
+
+    // In explicit demo mode, allow simulated persona
+    const isDemo = typeof window !== 'undefined' && localStorage.getItem('cloudpilot_app_mode') === 'demo';
+    if (isDemo && email && email.includes('@')) {
+      setIsAuthenticated(true);
+      localStorage.setItem('cloudpilot_authenticated', JSON.stringify(true));
+      const demoUser: UserProfile = {
         ...user,
         email,
-        name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        role: 'DevOps Lead',
+        isServerVerified: false
       };
-      setUser(updatedUser);
-      localStorage.setItem('cloudpilot_user', JSON.stringify(updatedUser));
+      setUser(demoUser);
+      localStorage.setItem('cloudpilot_user', JSON.stringify(demoUser));
+      return true;
     }
-    return true;
+
+    return false;
   };
 
   const logout = () => {
     setIsAuthenticated(false);
-    localStorage.setItem('cloudpilot_authenticated', JSON.stringify(false));
+    localStorage.removeItem('cloudpilot_authenticated');
+    localStorage.removeItem('cloudpilot_jwt_token');
+    localStorage.removeItem('cloudpilot_user');
   };
 
   const markNotificationRead = (id: string) => {
