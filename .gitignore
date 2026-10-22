@@ -31,3 +31,7 @@ __pycache__/
 .venv/
 env/
 venv/
+*.sqlite3
+backend/data/
+scratch/
+agent_log.jsonl

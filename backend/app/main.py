@@ -82,8 +82,11 @@ app.include_router(discovery.router)
 
 @app.on_event("startup")
 def on_startup():
+    from app.db.database import init_database_schema
+    init_database_schema()
     logger.info("=" * 60)
     logger.info(f"🚀 {settings.app_name} v{settings.version} active on port {settings.port}")
     logger.info("🔒 Isolated Two-Role IAM Architecture Ready (Role 1: Audit, Role 2: Remediation)")
     logger.info("🛡️ Standardized Resilience & Failure Handlers Active")
+    logger.info("💾 Relational Database Initialized & Tenant Isolation Ready")
     logger.info("=" * 60)

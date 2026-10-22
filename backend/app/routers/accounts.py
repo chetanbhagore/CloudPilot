@@ -20,6 +20,7 @@ from app.services.aws_sts import (
     STSValidationError
 )
 from app.services.auth import get_current_user
+from app.db.database import AccountRepository
 
 logger = logging.getLogger("cloudpilot.accounts")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -65,9 +66,15 @@ def connect_account(request: AccountConnectRequest):
             "session_expiration": demo_session["expiration"],
             "is_live": False,
             "execution_mode": "demo",
-            "connection_status": "connected"
+            "connection_status": "connected",
+            "connected_at": datetime.now(timezone.utc).isoformat()
         }
         _connected_accounts[f"demo:{sanitized_id}"] = account_info
+        try:
+            AccountRepository.save_account("org-acme-prod", account_info)
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal DB save error for demo account: {e}")
+
         return AccountConnectResponse(
             success=True,
             account_id=sanitized_id,
@@ -103,9 +110,15 @@ def connect_account(request: AccountConnectRequest):
             "session_expiration": sts_session.get("expiration"),
             "is_live": True,
             "execution_mode": "live",
-            "connection_status": "connected"
+            "connection_status": "connected",
+            "connected_at": datetime.now(timezone.utc).isoformat()
         }
         _connected_accounts[f"live:{sanitized_id}"] = account_info
+        try:
+            AccountRepository.save_account("org-acme-prod", account_info)
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal DB save error for live account: {e}")
+
         logger.info(f"[Accounts] Account {sanitized_id} verified and connected via live AWS STS")
 
         return AccountConnectResponse(
@@ -170,8 +183,18 @@ def disconnect_account(account_id: str, mode: str = "live"):
     """
     sanitized_id = account_id.replace("-", "").strip()
     key = f"{mode}:{sanitized_id}"
+    deleted = False
     if key in _connected_accounts:
         del _connected_accounts[key]
+        deleted = True
+    
+    try:
+        db_deleted = AccountRepository.delete_account("org-acme-prod", sanitized_id, mode)
+        deleted = deleted or db_deleted
+    except Exception as e:
+        logger.warning(f"[DB] Non-fatal DB delete error: {e}")
+
+    if deleted:
         return {
             "success": True,
             "account_id": sanitized_id,

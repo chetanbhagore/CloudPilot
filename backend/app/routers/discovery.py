@@ -23,6 +23,7 @@ from app.services.safety_passport import (
 )
 from app.services.auth import require_permission, enforce_tenant_isolation
 from app.routers.accounts import _connected_accounts
+from app.db.database import FindingRepository, AuditRepository
 
 logger = logging.getLogger("cloudpilot.discovery_router")
 router = APIRouter(tags=["Discovery & Remediation"])
@@ -57,6 +58,10 @@ def run_discovery_scan(
         demo_findings = get_demo_scenario_findings("fintech", sanitized_id, request.region)
         for f in demo_findings:
             _cached_findings[f"demo:{f.id}"] = f
+            try:
+                FindingRepository.save_finding("org-acme-prod", f.model_dump())
+            except Exception as e:
+                logger.warning(f"[DB] Non-fatal save error: {e}")
         return DiscoveryResponse(
             success=True,
             account_id=sanitized_id,
@@ -127,10 +132,13 @@ def run_discovery_scan(
             scan_status = "completed"
             error_msg = None
 
-        logger.info(
-            f"[Discovery] Live scan {scan_id} complete for {sanitized_id}: "
-            f"{len(discovered_findings)} findings across {scanned_count} resources inspected. Status: {scan_status}"
-        )
+        for f in discovered_findings:
+            _cached_findings[f"live:{f.id}"] = f
+            try:
+                req_org = request.organization_id or "org-acme-prod"
+                FindingRepository.save_finding(req_org, f.model_dump())
+            except Exception as e:
+                logger.warning(f"[DB] Non-fatal save error: {e}")
 
         return DiscoveryResponse(
             success=scan_status != "failed",
@@ -310,6 +318,24 @@ def approve_finding(
         canonical_payload = f"{finding.id}|{finding.resource.id}|{now_iso}|{record.aws_request_id}|{actor_email}"
         integrity_hash = hashlib.sha256(canonical_payload.encode()).hexdigest()
 
+        try:
+            FindingRepository.update_status(finding_org, finding.id, "resolved", mode="demo")
+            AuditRepository.record_event(finding_org, {
+                "id": f"aud-demo-{uuid.uuid4().hex[:8]}",
+                "finding_id": finding.id,
+                "action": finding.operation,
+                "resource_id": finding.resource.id,
+                "actor_email": actor_email,
+                "aws_request_id": record.aws_request_id,
+                "outcome": "success",
+                "canonical_payload": canonical_payload,
+                "integrity_hash": integrity_hash,
+                "timestamp": now_iso,
+                "execution_mode": "demo"
+            })
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal audit save error: {e}")
+
         return ApproveResponse(
             success=True,
             finding_id=finding.id,
@@ -384,6 +410,25 @@ def approve_finding(
 
         canonical_payload = f"{finding.id}|{finding.resource.id}|{now_iso}|{record.aws_request_id or 'none'}|{actor_email}"
         integrity_hash = hashlib.sha256(canonical_payload.encode()).hexdigest()
+
+        try:
+            if record.state == "succeeded":
+                FindingRepository.update_status(finding_org, finding.id, "resolved", mode="live")
+            AuditRepository.record_event(finding_org, {
+                "id": f"aud-{uuid.uuid4().hex[:8]}",
+                "finding_id": finding.id,
+                "action": finding.operation,
+                "resource_id": finding.resource.id,
+                "actor_email": actor_email,
+                "aws_request_id": record.aws_request_id or "none",
+                "outcome": record.state,
+                "canonical_payload": canonical_payload,
+                "integrity_hash": integrity_hash,
+                "timestamp": now_iso,
+                "execution_mode": "live"
+            })
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal live audit save error: {e}")
 
         # ONLY update finding to resolved if verification SUCCEEDED!
         if record.state == "succeeded":
