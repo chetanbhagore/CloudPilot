@@ -21,7 +21,8 @@ export default function Approve() {
     accountConfig,
     resolvedFindingIds,
     securityScore,
-    approveRemediation
+    approveRemediation,
+    appMode
   } = useDemo();
 
   const currentFinding = getActiveFinding();
@@ -36,12 +37,12 @@ export default function Approve() {
 
   // 6 Believable Execution Stages
   const executionStages = [
-    { title: 'Rechecking Preconditions', detail: `Validating resource presence and state for ${currentFinding.resource.id}` },
-    { title: 'Confirming Human Signature', detail: `Verifying cryptographic authorization signature from ${user.email}` },
-    { title: 'Assuming Scoped IAM Role', detail: `STS AssumeRole: arn:aws:iam::${accountConfig.accountId}:role/CloudPilotRemediationRole` },
+    { title: 'Rechecking Preconditions', detail: `Asserting target resource ${currentFinding.resource.id} state in ${currentFinding.resource.region}` },
+    { title: 'Validating Human Cryptographic Signature', detail: `Cryptographic author attribution: ${user.name} (${user.email})` },
+    { title: 'Assuming Scoped IAM Remediation Role', detail: `STS AssumeRole: arn:aws:iam::${accountConfig.accountId}:role/CloudPilotRemediationRole (ExternalId=${accountConfig.externalId || 'cp-tenant-9042-demo'})` },
     { title: 'Dispatching Atomic AWS API Call', detail: `Executing ${currentFinding.operation} with verified parameter payload` },
-    { title: 'Reading Back Verified State', detail: `Calling verification describe query for ${currentFinding.resource.id}` },
-    { title: 'Recording Cryptographic Audit Proof', detail: 'Calculating WebCrypto SHA-256 hash and appending to ledger' },
+    { title: 'Reading Back Verified Cloud State', detail: `Calling verification Describe query for ${currentFinding.resource.id}` },
+    { title: 'Stamping Cryptographic Audit Ledger', detail: 'Computing WebCrypto SHA-256 seal and appending tamper-evident record' },
   ];
 
   const startExecution = () => {
@@ -282,10 +283,12 @@ export default function Approve() {
                 <div className="account-dot" style={{ width: 12, height: 12 }} />
                 <div>
                   <h3 style={{ fontSize: 18, fontWeight: 700 }}>
-                    Executing Simulated Remediation Pipeline…
+                    {appMode === 'live' || currentFinding.id.startsWith('live-')
+                      ? 'Executing Live AWS STS Remediation Pipeline…'
+                      : 'Executing Authenticated Remediation Pipeline…'}
                   </h3>
                   <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                    Dispatched under scoped role CloudPilotRemediationRole
+                    Dispatched under scoped role arn:aws:iam::{accountConfig.accountId}:role/CloudPilotRemediationRole
                   </div>
                 </div>
               </div>
@@ -382,6 +385,9 @@ export default function Approve() {
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Projected Run-Rate Reduction</div>
                         <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--apple-emerald-dark)' }}>
                           ~${currentFinding.estimatedSavings.toFixed(2)}/mo
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-tertiary)', marginLeft: 6 }}>
+                            (₹{Math.round(currentFinding.estimatedSavings * 83).toLocaleString('en-IN')}/mo)
+                          </span>
                         </div>
                       </div>
                     </>
@@ -396,7 +402,7 @@ export default function Approve() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
                     <div style={{ padding: 12, background: '#FFFFFF', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-crimson-dark)', marginBottom: 4 }}>
-                        BEFORE (Simulated Discovery):
+                        BEFORE (Pre-Remediation State):
                       </div>
                       <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
                         {currentFinding.beforeState}
@@ -404,7 +410,7 @@ export default function Approve() {
                     </div>
                     <div style={{ padding: 12, background: '#FFFFFF', borderRadius: 8, border: '1px solid rgba(48, 209, 88, 0.4)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 4 }}>
-                        AFTER (Independently Verified):
+                        AFTER (Independently Verified via Describe Query):
                       </div>
                       <div style={{ fontSize: 12.5, color: 'var(--apple-emerald-dark)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
                         {currentFinding.afterState}

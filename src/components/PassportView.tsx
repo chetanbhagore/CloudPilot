@@ -48,8 +48,13 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF' }}>
               CloudPilot Safety Passport™
             </div>
-            <div style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
-              Target: {passport.resourceIdentity.id} • Verified Pre-Flight State
+            <div style={{ fontSize: 12, color: '#8E8E93', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span>Target: {passport.resourceIdentity.id} • Verified Pre-Flight State</span>
+              {passport.findingId.startsWith('live-') && (
+                <span className="badge" style={{ background: 'rgba(0, 113, 227, 0.3)', color: '#64D2FF', fontSize: 10.5, border: '1px solid rgba(0, 113, 227, 0.5)' }}>
+                  ⚡ LIVE AWS STS SESSION
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -151,7 +156,7 @@ export default function PassportView({ passport, onApprove, showApproveButton = 
             Exact Atomic Operation (Deterministic Payload)
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
-            Only this specific AWS API call will be executed under CloudPilotRemediationRole upon approval. No wildcard permissions or cascade modifications.
+            Only this specific AWS API call will be executed under <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--apple-blue)', fontWeight: 600 }}>arn:aws:iam::{passport.resourceIdentity.account}:role/CloudPilotRemediationRole</code> upon explicit human authorization. Zero wildcard permissions or cascade modifications.
           </div>
 
           <div className="code-block">
