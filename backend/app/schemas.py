@@ -208,3 +208,13 @@ class AuthenticatedUser(BaseModel):
     role: UserRole
     permissions: List[str]
     is_demo: bool = False
+
+# ─── Standardized API Error Schemas ───────────────────────────────────────────
+class StandardErrorResponse(BaseModel):
+    error_code: str
+    category: str  # 'validation_error' | 'authentication_error' | 'authorization_error' | 'aws_permission_error' | 'aws_throttling_error' | 'timeout_error' | 'internal_error' | 'resource_not_found'
+    message: str
+    detail: Optional[str] = None
+    retryable: bool = False
+    timestamp: str
+    correlation_id: Optional[str] = None
