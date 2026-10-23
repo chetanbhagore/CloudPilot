@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cloudpilot-backend
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health/live
+    envVars:
+      - key: CLOUDPILOT_ENV
+        value: production
+      - key: CLOUDPILOT_AUTH_SECRET
+        generateValue: true
+      - key: CLOUDPILOT_DB_PATH
+        value: "backend/data/cloudpilot.db"
+      - key: AWS_DEFAULT_REGION
+        value: ap-south-1
+      - key: OPERATOR_ACCOUNT_ID
+        value: "123456789012"
+      - key: CORS_ORIGINS
+        value: "https://cloudpilot.vercel.app,http://localhost:5173"

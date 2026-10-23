@@ -34,12 +34,16 @@ class Settings(BaseModel):
     database_path: str = os.getenv("CLOUDPILOT_DB_PATH", "cloudpilot.db")
 
     # CORS Origins allowed
-    cors_origins: List[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ]
+    cors_origins: List[str] = Field(
+        default_factory=lambda: [
+            orig.strip()
+            for orig in os.getenv(
+                "CORS_ORIGINS",
+                "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+            ).split(",")
+            if orig.strip()
+        ]
+    )
 
     def validate_production_readiness(self):
         """
