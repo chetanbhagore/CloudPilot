@@ -305,7 +305,7 @@ export default function Navbar() {
           <span>Two-Role IAM Active</span>
         </div>
 
-        {/* ── Mode Switcher: Live AWS Mode ↔ Demo Simulation ── */}
+        {/* ── Mode Switcher: Live Cloud Mode ↔ Sandbox Preview ── */}
         <div
           style={{
             display: 'inline-flex',
@@ -337,10 +337,10 @@ export default function Navbar() {
               boxShadow: appMode === 'live' ? '0 2px 8px rgba(0, 113, 227, 0.35)' : 'none',
               transition: 'all 160ms ease'
             }}
-            title="Live AWS Mode: Discovers and manages real AWS account resources via STS AssumeRole"
+            title="Live Cloud Mode: Discovers and manages real AWS and Azure infrastructure"
           >
             <Zap size={12} fill={appMode === 'live' ? '#FFFFFF' : 'none'} />
-            <span>Live AWS</span>
+            <span>Live Cloud</span>
             <span
               style={{
                 fontSize: 9,
@@ -375,7 +375,7 @@ export default function Navbar() {
               boxShadow: appMode === 'demo' ? 'var(--shadow-sm)' : 'none',
               transition: 'all 160ms ease'
             }}
-            title="Demo Sandbox: Safe presentation environment using synthetic fixtures"
+            title="Sandbox Preview: Safe environment with sample workloads"
           >
             <span
               style={{
@@ -386,7 +386,7 @@ export default function Navbar() {
                 boxShadow: appMode === 'demo' ? '0 0 0 2px rgba(255, 159, 10, 0.3)' : 'none'
               }}
             />
-            <span>Demo Mode</span>
+            <span>Sandbox</span>
           </button>
         </div>
       </div>

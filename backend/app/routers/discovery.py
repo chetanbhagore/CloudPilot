@@ -133,6 +133,18 @@ def run_discovery_scan(
                 regions=target_regions,
                 scan_id=scan_id
             )
+        elif account_info.get("connection_type") == "access_keys":
+            from app.services.aws_sts import session_cache
+            credentials = session_cache.get(f"{sanitized_id}|access_keys|{request.region}") or session_cache.get(f"live:{sanitized_id}")
+            if not credentials:
+                raise HTTPException(status_code=401, detail="Live AWS Access Key session expired. Please reconnect in Settings.")
+            discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_account_live(
+                account_id=sanitized_id,
+                region=request.region,
+                credentials=credentials,
+                regions=target_regions,
+                scan_id=scan_id
+            )
         else:
             credentials = assume_role(
                 role_arn=role_arn,
@@ -436,6 +448,11 @@ def approve_finding(
                 endpoint_url=account_info.get("endpoint_url", "http://localhost:4566"),
                 region=finding.resource.region
             )
+        elif account_info.get("connection_type") == "access_keys":
+            from app.services.aws_sts import session_cache
+            credentials = session_cache.get(f"{target_account_id}|access_keys|{finding.resource.region}") or session_cache.get(f"live:{target_account_id}")
+            if not credentials:
+                raise HTTPException(status_code=401, detail="Live AWS Access Key session expired. Please reconnect in Settings.")
         else:
             credentials = assume_role(
                 role_arn=rem_role_arn,

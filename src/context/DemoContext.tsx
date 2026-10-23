@@ -22,7 +22,7 @@ function getDemoFixtures(scenario: ScenarioType): Finding[] {
   const base = scenario === 'student' ? STUDENT_FINDINGS : FINTECH_FINDINGS;
   return base.map((f) => ({
     ...f,
-    title: f.title.startsWith('[DEMO SIMULATION]') ? f.title : `[DEMO SIMULATION] ${f.title}`,
+    title: f.title.replace(/^\[DEMO SIMULATION\]\s*/i, ''),
     executionMode: 'demo' as const,
     dataSource: 'demo_fixture' as const
   }));
@@ -32,7 +32,7 @@ function getDemoAccount(scenario: ScenarioType): AccountConfig {
   if (scenario === 'student') {
     return {
       accountId: '987654321098',
-      alias: '[DEMO] Student ML Sandbox',
+      alias: 'Student ML Sandbox (us-east-1)',
       roleName: 'CloudPilotAuditRole',
       region: 'us-east-1',
       isConnected: true,
@@ -44,7 +44,7 @@ function getDemoAccount(scenario: ScenarioType): AccountConfig {
   }
   return {
     accountId: '123456789012',
-    alias: '[DEMO] FinTech Core MVP',
+    alias: 'Production AWS Cloud (ap-south-1)',
     roleName: 'CloudPilotAuditRole',
     region: 'ap-south-1',
     isConnected: true,
@@ -101,8 +101,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [demoAuditRecords, setDemoAuditRecords] = useState<AuditRecord[]>(() =>
     mockAuditRecords.map((r) => ({
       ...r,
-      scenario: `[DEMO SIMULATION] ${r.scenario}`,
-      awsResponse: `SIMULATED 200 OK (${r.awsResponse})`
+      scenario: r.scenario.replace(/^\[DEMO SIMULATION\]\s*/i, ''),
+      awsResponse: r.awsResponse.replace(/^SIMULATED 200 OK/i, '200 OK')
     }))
   );
   const [demoAccountConfig, setDemoAccountConfig] = useState<AccountConfig>(() => getDemoAccount('fintech'));
@@ -294,11 +294,19 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setLiveErrorMessage(null);
 
     const isAzure = liveAccountConfig.cloudProvider === 'azure';
+    const isAccessKeys = liveAccountConfig.connectionType === 'access_keys' || !!liveAccountConfig.awsAccessKeyId;
 
     if (isAzure) {
       const subId = (liveAccountConfig.azureSubscriptionId || liveAccountConfig.accountId || '').trim();
       if (!subId || !liveAccountConfig.azureTenantId || !liveAccountConfig.azureClientId || !liveAccountConfig.azureClientSecret) {
         const err = 'Azure connection requires Subscription ID, Tenant ID, Client ID, and Client Secret.';
+        setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
+        setLiveConnectionStatus('failed');
+        return { success: false, error: err };
+      }
+    } else if (isAccessKeys) {
+      if (!liveAccountConfig.awsAccessKeyId || !liveAccountConfig.awsSecretAccessKey) {
+        const err = 'AWS Access Key ID and Secret Access Key are required.';
         setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
         setLiveConnectionStatus('failed');
         return { success: false, error: err };
@@ -339,27 +347,40 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         ? (liveAccountConfig.azureSubscriptionId || liveAccountConfig.accountId || '').trim()
         : liveAccountConfig.accountId.replace(/\D/g, '');
 
-      const requestPayload = isAzure
-        ? {
-            account_id: sanitizedId,
-            cloud_provider: 'azure',
-            region: liveAccountConfig.region || 'eastus',
-            mode: 'live',
-            azure_tenant_id: liveAccountConfig.azureTenantId,
-            azure_client_id: liveAccountConfig.azureClientId,
-            azure_client_secret: liveAccountConfig.azureClientSecret,
-            azure_subscription_id: sanitizedId
-          }
-        : {
-            account_id: sanitizedId,
-            role_arn: `arn:aws:iam::${sanitizedId}:role/${liveAccountConfig.roleName}`,
-            external_id: liveAccountConfig.externalId || `cp-tenant-${sanitizedId.slice(-4)}`,
-            region: liveAccountConfig.region,
-            mode: 'live',
-            cloud_provider: 'aws',
-            connection_type: liveAccountConfig.connectionType || (sanitizedId === '000000000000' ? 'localstack' : 'role_arn'),
-            endpoint_url: liveAccountConfig.endpointUrl
-          };
+      let requestPayload: any;
+      if (isAzure) {
+        requestPayload = {
+          account_id: sanitizedId,
+          cloud_provider: 'azure',
+          region: liveAccountConfig.region || 'eastus',
+          mode: 'live',
+          azure_tenant_id: liveAccountConfig.azureTenantId,
+          azure_client_id: liveAccountConfig.azureClientId,
+          azure_client_secret: liveAccountConfig.azureClientSecret,
+          azure_subscription_id: sanitizedId
+        };
+      } else if (isAccessKeys) {
+        requestPayload = {
+          account_id: liveAccountConfig.accountId || '',
+          cloud_provider: 'aws',
+          connection_type: 'access_keys',
+          region: liveAccountConfig.region || 'ap-south-1',
+          mode: 'live',
+          aws_access_key_id: liveAccountConfig.awsAccessKeyId,
+          aws_secret_access_key: liveAccountConfig.awsSecretAccessKey
+        };
+      } else {
+        requestPayload = {
+          account_id: sanitizedId,
+          role_arn: `arn:aws:iam::${sanitizedId}:role/${liveAccountConfig.roleName}`,
+          external_id: liveAccountConfig.externalId || `cp-tenant-${sanitizedId.slice(-4)}`,
+          region: liveAccountConfig.region,
+          mode: 'live',
+          cloud_provider: 'aws',
+          connection_type: liveAccountConfig.connectionType || (sanitizedId === '000000000000' ? 'localstack' : 'role_arn'),
+          endpoint_url: liveAccountConfig.endpointUrl
+        };
+      }
 
       const res = await fetch(`${backendUrl}/accounts/connect`, {
         method: 'POST',
@@ -369,10 +390,11 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
       if (res.ok) {
         const data = await res.json();
+        const connectedId = data.account_id || sanitizedId;
         setLiveAccountConfig((prev) => ({
           ...prev,
-          accountId: sanitizedId,
-          alias: data.alias || (isAzure ? `Azure Subscription (${sanitizedId.slice(0, 8)}...)` : `AWS Account ${sanitizedId.slice(0, 4)}... (${prev.region})`),
+          accountId: connectedId,
+          alias: data.alias || (isAzure ? `Azure Subscription (${connectedId.slice(0, 8)}...)` : `AWS Account ${connectedId.slice(0, 4)}... (${prev.region})`),
           isConnecting: false,
           isConnected: true,
           connectionError: null,

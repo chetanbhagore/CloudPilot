@@ -136,7 +136,7 @@ export default function AuditTrail() {
             <span className="badge badge-info">STAGE 5 OF 5</span>
             {appMode === 'demo' && (
               <span className="badge" style={{ background: 'rgba(255, 159, 10, 0.15)', color: 'var(--apple-amber-dark)', fontWeight: 700 }}>
-                DEMO SIMULATION ({activeScenario.toUpperCase()})
+                SANDBOX WORKLOAD ({activeScenario.toUpperCase()})
               </span>
             )}
             <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Cryptographic Audit Ledger</span>

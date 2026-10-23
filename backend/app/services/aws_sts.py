@@ -294,6 +294,70 @@ def connect_localstack(
         "verified_at": datetime.now(timezone.utc).isoformat()
     }
 
+def connect_with_access_keys(
+    access_key_id: str,
+    secret_access_key: str,
+    session_token: Optional[str] = None,
+    region: str = "ap-south-1"
+) -> Dict[str, Any]:
+    """
+    Directly authenticates an AWS account via IAM Access Key ID and Secret Access Key.
+    Validates identity and resolves the real 12-digit AWS Account ID via sts:GetCallerIdentity.
+    FAILS CLOSED: Never generates synthetic or simulated credentials on live paths.
+    """
+    if not boto3:
+        raise STSConfigurationError("boto3 is not available in backend environment.")
+
+    clean_key = access_key_id.strip()
+    clean_secret = secret_access_key.strip()
+    clean_token = session_token.strip() if session_token else None
+
+    if not clean_key or not clean_secret:
+        raise STSValidationError("Both AWS Access Key ID and Secret Access Key must be provided.")
+
+    try:
+        kwargs: Dict[str, Any] = {
+            "region_name": region,
+            "aws_access_key_id": clean_key,
+            "aws_secret_access_key": clean_secret,
+        }
+        if clean_token:
+            kwargs["aws_session_token"] = clean_token
+
+        sts = boto3.client("sts", **kwargs)
+        identity = sts.get_caller_identity()
+
+        account_id = identity.get("Account", "")
+        arn = identity.get("Arn", "")
+        expiration = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+
+        session_dict = {
+            "access_key_id": clean_key,
+            "secret_access_key": clean_secret,
+            "session_token": clean_token,
+            "expiration": expiration,
+            "assumed_role_user_arn": arn,
+            "target_account_id": account_id,
+            "is_simulated": False,
+            "execution_mode": "live",
+            "connection_type": "access_keys",
+            "verified_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Cache session for subsequent operations
+        exp_epoch = time.time() + 86400 * 365
+        session_cache.set(f"{account_id}|access_keys|{region}", session_dict, exp_epoch)
+        session_cache.set(f"live:{account_id}", session_dict, exp_epoch)
+        return session_dict
+
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "AuthFailure")
+        msg = e.response.get("Error", {}).get("Message", str(e))
+        raise STSAssumeRoleError(f"AWS authentication rejected ({code}): {msg}") from e
+    except Exception as e:
+        raise STSConfigurationError(f"Failed to authenticate AWS credentials: {str(e)}") from e
+
+
 def get_ec2_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
     """
     Returns a live boto3 EC2 client initialized with assumed temporary STS credentials.

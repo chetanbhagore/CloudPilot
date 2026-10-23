@@ -30,6 +30,9 @@ class AccountConnectRequest(BaseModel):
     azure_client_id: Optional[str] = Field(default=None, description="Azure App Registration (client) ID")
     azure_client_secret: Optional[str] = Field(default=None, description="Azure Service Principal Client Secret")
     azure_subscription_id: Optional[str] = Field(default=None, description="Target Azure Subscription ID")
+    aws_access_key_id: Optional[str] = Field(default=None, description="Direct AWS IAM Access Key ID")
+    aws_secret_access_key: Optional[str] = Field(default=None, description="Direct AWS IAM Secret Access Key")
+    aws_session_token: Optional[str] = Field(default=None, description="Optional temporary session token")
 
 class AccountConnectResponse(BaseModel):
     success: bool

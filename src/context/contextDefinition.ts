@@ -21,12 +21,14 @@ export interface AccountConfig {
   externalId?: string;
   isLive?: boolean;
   cloudProvider?: 'aws' | 'azure';
-  connectionType?: 'role_arn' | 'localstack' | 'azure_sp';
+  connectionType?: 'role_arn' | 'localstack' | 'azure_sp' | 'access_keys';
   endpointUrl?: string;
   azureTenantId?: string;
   azureClientId?: string;
   azureClientSecret?: string;
   azureSubscriptionId?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
 }
 
 export interface DemoContextType {

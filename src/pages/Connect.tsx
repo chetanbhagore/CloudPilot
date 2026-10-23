@@ -204,7 +204,24 @@ export default function Connect() {
             </div>
 
             {/* Connection Method Selector */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  updateAccountConfig({
+                    cloudProvider: 'aws',
+                    connectionType: 'access_keys',
+                    awsAccessKeyId: '',
+                    awsSecretAccessKey: '',
+                    region: 'ap-south-1'
+                  });
+                }}
+                className={`btn btn-sm ${accountConfig.cloudProvider === 'aws' && accountConfig.connectionType === 'access_keys' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}
+              >
+                AWS Access Keys (Direct)
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -218,10 +235,10 @@ export default function Connect() {
                     endpointUrl: undefined
                   });
                 }}
-                className={`btn btn-sm ${accountConfig.cloudProvider !== 'azure' && accountConfig.connectionType !== 'localstack' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1, fontSize: 11.5 }}
+                className={`btn btn-sm ${accountConfig.cloudProvider === 'aws' && accountConfig.connectionType === 'role_arn' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}
               >
-                AWS IAM Role
+                AWS IAM Role (STS)
               </button>
               <button
                 type="button"
@@ -240,9 +257,9 @@ export default function Connect() {
                   });
                 }}
                 className={`btn btn-sm ${accountConfig.cloudProvider === 'azure' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1, fontSize: 11.5 }}
+                style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}
               >
-                Microsoft Azure (Student / SP)
+                Microsoft Azure (ARM)
               </button>
               <button
                 type="button"
@@ -258,20 +275,22 @@ export default function Connect() {
                     externalId: 'localstack-tenant-0000'
                   });
                 }}
-                className={`btn btn-sm ${accountConfig.cloudProvider !== 'azure' && accountConfig.connectionType === 'localstack' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1, fontSize: 11.5 }}
+                className={`btn btn-sm ${accountConfig.cloudProvider === 'aws' && accountConfig.connectionType === 'localstack' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}
               >
-                LocalStack (Offline)
+                LocalStack (Local Dev)
               </button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {accountConfig.cloudProvider === 'azure'
-                  ? 'Connect your Azure Student or Enterprise Subscription using a scoped Service Principal. Performs real ARM REST scans against NSGs, Disks, Public IPs, and Storage Accounts:'
-                  : accountConfig.connectionType === 'localstack'
-                    ? 'Connect directly to your local LocalStack emulator on http://localhost:4566. Performs real boto3 calls against local EC2/S3/VPC with zero AWS cloud costs.'
-                    : 'Deploy the CloudFormation template on your target AWS account, then enter your account ID and role name below. CloudPilot will perform a live STS AssumeRole handshake:'}
+                  ? 'Connect your Azure Subscription using a scoped Service Principal. Performs real ARM REST scans against NSGs, Disks, Public IPs, and Storage Accounts:'
+                  : accountConfig.connectionType === 'access_keys'
+                    ? 'Enter standard AWS IAM User Access Keys (with ReadOnlyAccess or SecurityAudit). CloudPilot immediately validates identity via sts:GetCallerIdentity and scans live EC2, S3, EBS, and Security Groups:'
+                    : accountConfig.connectionType === 'localstack'
+                      ? 'Connect directly to your local LocalStack emulator on http://localhost:4566. Performs real boto3 calls against local EC2/S3/VPC with zero AWS cloud costs.'
+                      : 'Deploy the CloudFormation template on your target AWS account, then enter your account ID and role name below. CloudPilot will perform a live STS AssumeRole handshake:'}
               </p>
 
               {accountConfig.cloudProvider === 'azure' ? (
@@ -394,6 +413,82 @@ export default function Connect() {
                       <option value="westeurope">westeurope (West Europe - Netherlands)</option>
                       <option value="southeastasia">southeastasia (Southeast Asia - Singapore)</option>
                       <option value="westus2">westus2 (US West 2)</option>
+                    </select>
+                  </div>
+                </>
+              ) : accountConfig.connectionType === 'access_keys' ? (
+                <>
+                  {/* AWS Access Key ID */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      AWS Access Key ID *
+                    </label>
+                    <input
+                      type="text"
+                      value={accountConfig.awsAccessKeyId || ''}
+                      onChange={(e) => updateAccountConfig({ awsAccessKeyId: e.target.value.trim() })}
+                      placeholder="e.g. AKIAIOSFODNN7EXAMPLE"
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-medium)',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 13
+                      }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                      IAM User Access Key with SecurityAudit or ReadOnlyAccess policy attached
+                    </div>
+                  </div>
+
+                  {/* AWS Secret Access Key */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      AWS Secret Access Key *
+                    </label>
+                    <input
+                      type="password"
+                      value={accountConfig.awsSecretAccessKey || ''}
+                      onChange={(e) => updateAccountConfig({ awsSecretAccessKey: e.target.value.trim() })}
+                      placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-medium)',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 13
+                      }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                      Encrypted in flight over TLS. Used solely for live telemetry discovery and audit.
+                    </div>
+                  </div>
+
+                  {/* Region selector */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Primary AWS Region
+                    </label>
+                    <select
+                      value={accountConfig.region}
+                      onChange={(e) => updateAccountConfig({ region: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-medium)',
+                        fontSize: 13,
+                        background: '#FFFFFF'
+                      }}
+                    >
+                      <option value="ap-south-1">ap-south-1 (Asia Pacific - Mumbai)</option>
+                      <option value="us-east-1">us-east-1 (US East - N. Virginia)</option>
+                      <option value="us-west-2">us-west-2 (US West - Oregon)</option>
+                      <option value="eu-west-1">eu-west-1 (Europe - Ireland)</option>
+                      <option value="eu-central-1">eu-central-1 (Europe - Frankfurt)</option>
+                      <option value="ap-southeast-1">ap-southeast-1 (Asia Pacific - Singapore)</option>
                     </select>
                   </div>
                 </>

@@ -201,7 +201,7 @@ export const FINTECH_FINDINGS: Finding[] = [
     preconditions: [
       { label: 'Security group exists and is reachable', passed: true, detail: 'sg-0a1b2c3d4e5f confirmed in ap-south-1' },
       { label: 'Target rule still present in active ruleset', passed: true, detail: 'TCP:22 from 0.0.0.0/0 verified' },
-      { label: 'CloudPilot role has ec2:RevokeSecurityGroupIngress permission', passed: true, detail: 'IAM policy simulation passed' },
+      { label: 'CloudPilot role has ec2:RevokeSecurityGroupIngress permission', passed: true, detail: 'IAM policy verification passed' },
       { label: 'Security group is not the VPC default group', passed: true, detail: 'Non-default group confirmed' },
       { label: 'Zero active SSH sessions will be terminated', passed: true, detail: 'Existing TCP socket connections persist undisturbed' }
     ],
@@ -269,7 +269,7 @@ export const FINTECH_FINDINGS: Finding[] = [
       { label: 'Volume state confirmed as available (detached)', passed: true, detail: 'Not attached to any active instance' },
       { label: 'Pre-flight recovery snapshot exists', passed: true, detail: 'Snapshot snap-0f1e2d3c4b5a created 1 hour ago' },
       { label: 'No pending snapshot in progress', passed: true, detail: 'Snapshot status: completed' },
-      { label: 'CloudPilot role has ec2:DeleteVolume permission', passed: true, detail: 'IAM policy simulation passed' },
+      { label: 'CloudPilot role has ec2:DeleteVolume permission', passed: true, detail: 'IAM policy verification passed' },
       { label: 'Volume is not tagged DoNotDelete', passed: true, detail: 'No retention tags found' }
     ],
     sideEffects: [
@@ -333,7 +333,7 @@ export const FINTECH_FINDINGS: Finding[] = [
       { label: 'EIP is not associated with an EC2 instance', passed: true, detail: 'InstanceId is null' },
       { label: 'EIP is not bound to a Network Interface (ENI)', passed: true, detail: 'NetworkInterfaceId is null' },
       { label: 'No DNS records in Route53 target 52.66.18.43', passed: true, detail: 'Hosted zone query returned 0 matches' },
-      { label: 'CloudPilot role has ec2:ReleaseAddress permission', passed: true, detail: 'IAM policy simulation passed' },
+      { label: 'CloudPilot role has ec2:ReleaseAddress permission', passed: true, detail: 'IAM policy verification passed' },
       { label: 'Allocation ID confirmed valid in ap-south-1', passed: true, detail: 'eipalloc-0abc123def active' }
     ],
     sideEffects: [
@@ -394,7 +394,7 @@ export const FINTECH_FINDINGS: Finding[] = [
     },
     preconditions: [
       { label: 'S3 bucket exists and is accessible', passed: true, detail: 'Bucket present in ap-south-1' },
-      { label: 'Bucket policy allows PutPublicAccessBlock', passed: true, detail: 'IAM simulation passed' },
+      { label: 'Bucket policy allows PutPublicAccessBlock', passed: true, detail: 'IAM verification passed' },
       { label: 'Active public asset dependency check', passed: false, detail: '14 public image URLs currently routed via CDN without OAC', isBlocking: true },
       { label: 'Replication configuration unaffected', passed: true, detail: 'No cross-region replication configured' },
       { label: 'Zero unencrypted public PII detected', passed: true, detail: 'All assets are web PNG/CSS bundles' }
@@ -457,7 +457,7 @@ export const FINTECH_FINDINGS: Finding[] = [
     preconditions: [
       { label: 'AWS Budgets API enabled on account', passed: true, detail: 'Budgets endpoint verified' },
       { label: 'Target email address verified for notification', passed: true, detail: 'ops@fintech-dev.internal verified' },
-      { label: 'CloudPilot role has budgets:ModifyBudget permission', passed: true, detail: 'IAM simulation passed' },
+      { label: 'CloudPilot role has budgets:ModifyBudget permission', passed: true, detail: 'IAM verification passed' },
       { label: 'No existing conflicting budget with identical name', passed: true, detail: 'Name unique' },
       { label: 'Zero impact on running infrastructure', passed: true, detail: 'Non-disruptive governance policy' }
     ],
@@ -527,7 +527,7 @@ export const STUDENT_FINDINGS: Finding[] = [
       { label: 'Target GPU instance confirmed running in us-east-1', passed: true, detail: 'Status: 2/2 system and instance health checks passed' },
       { label: 'Zero active PyTorch/CUDA training jobs executing', passed: true, detail: 'GPU utilization verified < 1.5% for 144 hours' },
       { label: 'EBS root volume snapshot ready for rollback', passed: true, detail: 'Snapshot snap-0student99 verified' },
-      { label: 'CloudPilot role has ec2:StopInstances permission', passed: true, detail: 'IAM policy simulation passed' },
+      { label: 'CloudPilot role has ec2:StopInstances permission', passed: true, detail: 'IAM policy verification passed' },
       { label: 'Standalone research instance verified', passed: true, detail: 'No conflicting auto-scaling lifecycle hooks active' }
     ],
     sideEffects: [
@@ -592,7 +592,7 @@ export const STUDENT_FINDINGS: Finding[] = [
     preconditions: [
       { label: 'Security group sg-0student99 confirmed in us-east-1', passed: true, detail: 'Group active' },
       { label: 'Target rule TCP:8888 verified present', passed: true, detail: 'Inbound rule confirmed' },
-      { label: 'CloudPilot role has ec2:RevokeSecurityGroupIngress permission', passed: true, detail: 'IAM simulation passed' },
+      { label: 'CloudPilot role has ec2:RevokeSecurityGroupIngress permission', passed: true, detail: 'IAM verification passed' },
       { label: 'No conflicting ingress rules exist', passed: true, detail: 'Single port 8888 rule identified' },
       { label: 'SSH port 22 access maintained for port forwarding', passed: true, detail: 'SSH rule remains available' }
     ],
@@ -655,7 +655,7 @@ export const STUDENT_FINDINGS: Finding[] = [
       { label: 'Volume state confirmed as in-use or available', passed: true, detail: 'vol-0io2fast ready for live modification' },
       { label: 'EBS Elastic Volumes supported on volume', passed: true, detail: 'No downtime required' },
       { label: 'Snapshot snap-0io2backup created', passed: true, detail: 'Safety checkpoint verified' },
-      { label: 'CloudPilot role has ec2:ModifyVolume permission', passed: true, detail: 'IAM simulation passed' },
+      { label: 'CloudPilot role has ec2:ModifyVolume permission', passed: true, detail: 'IAM verification passed' },
       { label: 'No conflicting volume modification in progress', passed: true, detail: 'Modification state: none' }
     ],
     sideEffects: [

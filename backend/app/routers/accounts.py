@@ -14,6 +14,7 @@ from app.services.aws_sts import (
     assume_role,
     generate_demo_sts_session,
     connect_localstack,
+    connect_with_access_keys,
     validate_role_arn,
     STSConfigurationError,
     STSAssumeRoleError,
@@ -117,6 +118,58 @@ def connect_account(
             message=f"Successfully connected to Azure subscription '{azure_res['display_name']}' via Service Principal."
         )
 
+    # ── Direct AWS IAM Access Key Handling (Live Real Cloud) ──
+    if request.aws_access_key_id and request.aws_secret_access_key:
+        logger.info(f"[Accounts] Initiating live AWS Access Key connection for region {request.region} (Tenant: {org_id})")
+        try:
+            live_session = connect_with_access_keys(
+                access_key_id=request.aws_access_key_id,
+                secret_access_key=request.aws_secret_access_key,
+                session_token=request.aws_session_token,
+                region=request.region
+            )
+            real_account_id = live_session["target_account_id"]
+            account_info = {
+                "account_id": real_account_id,
+                "alias": f"AWS Live Account {real_account_id[:4]}... ({request.region})",
+                "region": request.region,
+                "role_arn": live_session["assumed_role_user_arn"],
+                "external_id": request.external_id or f"direct-keys-{real_account_id[-4:]}",
+                "assumed_role_user_arn": live_session["assumed_role_user_arn"],
+                "session_expiration": live_session["expiration"],
+                "is_live": True,
+                "execution_mode": "live",
+                "connection_status": "connected",
+                "connection_type": "access_keys",
+                "connected_at": datetime.now(timezone.utc).isoformat()
+            }
+            _connected_accounts[f"live:{real_account_id}"] = account_info
+            _connected_accounts[f"{org_id}:{real_account_id}"] = account_info
+            try:
+                AccountRepository.save_account(org_id, account_info)
+            except Exception as e:
+                logger.warning(f"[DB] Non-fatal DB save error for live access key account: {e}")
+
+            return AccountConnectResponse(
+                success=True,
+                account_id=real_account_id,
+                alias=account_info["alias"],
+                region=request.region,
+                role_arn=live_session["assumed_role_user_arn"],
+                assumed_role_user_arn=live_session["assumed_role_user_arn"],
+                session_expiration=live_session["expiration"],
+                is_live=True,
+                execution_mode="live",
+                connection_status="connected",
+                message=f"Successfully authenticated real AWS Account {real_account_id} via IAM Access Keys."
+            )
+        except (STSAssumeRoleError, STSValidationError, STSConfigurationError) as e:
+            logger.error(f"[Accounts] Live access key connection failed: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"[Accounts] Unexpected live access key error: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to authenticate AWS Access Keys: {str(e)}")
+
     sanitized_id = request.account_id.replace("-", "").strip()
     if len(sanitized_id) != 12 or not sanitized_id.isdigit():
         raise HTTPException(
@@ -216,7 +269,7 @@ def connect_account(
             message=f"Connected to LocalStack on {endpoint}. Real boto3 calls active with zero cloud spend."
         )
 
-    # ── Live AWS Mode Handling ──
+    # ── Live AWS STS AssumeRole Handling ──
     logger.info(f"[Accounts] Initiating live STS verification for {sanitized_id} with {request.role_arn} (Tenant: {org_id})")
     try:
         sts_session = assume_role(
