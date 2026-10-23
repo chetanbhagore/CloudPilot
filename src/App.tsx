@@ -12,6 +12,7 @@ import Approve from './pages/Approve';
 import AuditTrail from './pages/AuditTrail';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import DeployCenter from './pages/DeployCenter';
 
 function ProtectedLayout() {
   const { isAuthenticated } = useAuth();
@@ -30,6 +31,7 @@ function ProtectedLayout() {
           <Route path="/" element={<Overview />} />
           <Route path="/connect" element={<Connect />} />
           <Route path="/discover" element={<Discover />} />
+          <Route path="/deploy" element={<DeployCenter />} />
           <Route path="/passport" element={<PassportPage />} />
           <Route path="/approve" element={<Approve />} />
           <Route path="/audit" element={<AuditTrail />} />

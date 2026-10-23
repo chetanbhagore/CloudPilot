@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Search, ShieldCheck, CheckSquare,
-  BookOpen, Cloud, Zap, Settings, LogOut
+  BookOpen, Cloud, Zap, Settings, LogOut, Layers
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
@@ -15,6 +15,7 @@ export default function Sidebar() {
   const operationsNav = [
     { to: '/',          icon: LayoutDashboard, label: 'Overview',        badge: null, badgeWarn: false },
     { to: '/discover',  icon: Search,          label: 'Discover',        badge: String(findings.length), badgeWarn: false },
+    { to: '/deploy',    icon: Layers,          label: 'Workloads & Deploy', badge: 'Beta', badgeWarn: false },
     { to: '/passport',  icon: ShieldCheck,     label: 'Safety Passport', badge: 'Active', badgeWarn: false },
     { to: '/approve',   icon: CheckSquare,     label: 'Approve & Act',   badge: isRemediated ? `${resolvedCount} Done ✓` : '1 Ready', badgeWarn: !isRemediated },
     { to: '/audit',     icon: BookOpen,        label: 'Audit Trail',     badge: resolvedCount > 0 ? `${resolvedCount} Records` : null, badgeWarn: false },

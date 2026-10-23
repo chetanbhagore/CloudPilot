@@ -18,6 +18,7 @@ import uuid as uuid_module
 import sqlite3
 import hashlib
 import logging
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Dict, Any, List, Optional, Tuple, Union
 
@@ -225,11 +226,49 @@ def init_database_schema():
         if "cloudtrail_event_hint" not in existing_cols:
             cursor.execute("ALTER TABLE audit_events ADD COLUMN cloudtrail_event_hint TEXT DEFAULT '';")
 
+        # Multi-Cloud & Multi-Worker Accounts Migration
+        cursor.execute("PRAGMA table_info(aws_accounts);")
+        account_cols = {row["name"] for row in cursor.fetchall()}
+        if "cloud_provider" not in account_cols:
+            cursor.execute("ALTER TABLE aws_accounts ADD COLUMN cloud_provider TEXT DEFAULT 'aws';")
+        if "connection_type" not in account_cols:
+            cursor.execute("ALTER TABLE aws_accounts ADD COLUMN connection_type TEXT DEFAULT 'role_arn';")
+        if "tenant_id" not in account_cols:
+            cursor.execute("ALTER TABLE aws_accounts ADD COLUMN tenant_id TEXT DEFAULT '';")
+        if "client_id" not in account_cols:
+            cursor.execute("ALTER TABLE aws_accounts ADD COLUMN client_id TEXT DEFAULT '';")
+        if "client_secret" not in account_cols:
+            cursor.execute("ALTER TABLE aws_accounts ADD COLUMN client_secret TEXT DEFAULT '';")
+
+        # 9. Workload Deployments
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workload_deployments (
+            id TEXT PRIMARY KEY,
+            organization_id TEXT NOT NULL,
+            app_name TEXT NOT NULL,
+            repo_url TEXT NOT NULL,
+            branch TEXT DEFAULT 'main',
+            framework TEXT NOT NULL,
+            language TEXT NOT NULL,
+            target TEXT NOT NULL,
+            host_port INTEGER,
+            container_port INTEGER,
+            container_id TEXT,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            logs TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+        );
+        """)
+
         # Performance Indexes for Tenant Isolation & Fast Querying
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_tenant ON findings(organization_id, status);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_accounts_tenant ON aws_accounts(organization_id, execution_mode);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_tenant ON audit_events(organization_id, timestamp);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_remediation_idem ON remediation_executions(idempotency_key);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_workload_tenant ON workload_deployments(organization_id, status);")
 
         # Seed Default Tenant Organizations if not present
         cursor.execute("""
@@ -240,7 +279,7 @@ def init_database_schema():
             ('org-demo-simulated', 'CloudPilot Demo Sandbox', datetime('now'));
         """)
 
-    logger.info("[DB] SQLite database schema and indexes initialized successfully.")
+    logger.info("[DB] SQLite database schema, multi-cloud migrations and indexes initialized successfully.")
 
 
 # ── Tenant-Scoped Data Access Layer (Repositories) ────────────────────────────
@@ -330,8 +369,9 @@ class AccountRepository:
             INSERT OR REPLACE INTO aws_accounts (
                 account_id, organization_id, role_arn, external_id, region,
                 execution_mode, status, alias, assumed_role_user_arn,
-                session_expiration, connected_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                session_expiration, connected_at, cloud_provider, connection_type,
+                tenant_id, client_id, client_secret
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 account_data["account_id"],
                 org_id,
@@ -343,7 +383,12 @@ class AccountRepository:
                 account_data.get("alias", ""),
                 account_data.get("assumed_role_user_arn", ""),
                 account_data.get("session_expiration", ""),
-                account_data.get("connected_at", "")
+                account_data.get("connected_at", ""),
+                account_data.get("cloud_provider", "aws"),
+                account_data.get("connection_type", "role_arn"),
+                account_data.get("tenant_id", ""),
+                account_data.get("client_id", ""),
+                account_data.get("client_secret", "")
             ))
 
     @staticmethod
@@ -647,6 +692,89 @@ class AuditRepository:
             "events": events,
             "disclaimer": AuditRepository.DISCLAIMER
         }
+
+
+class WorkloadRepository:
+    """Persistent storage and tenant isolation for Git-to-Container workloads."""
+
+    @staticmethod
+    def create_deployment(org_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        with get_db_transaction() as conn:
+            conn.execute("""
+            INSERT OR REPLACE INTO workload_deployments (
+                id, organization_id, app_name, repo_url, branch, framework,
+                language, target, host_port, container_port, container_id,
+                status, error_message, logs, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data["id"],
+                org_id,
+                data.get("app_name", "app"),
+                data.get("repo_url", ""),
+                data.get("branch", "main"),
+                data.get("framework", "unknown"),
+                data.get("language", "python"),
+                data.get("target", "local"),
+                data.get("host_port"),
+                data.get("container_port"),
+                data.get("container_id", ""),
+                data.get("status", "PENDING"),
+                data.get("error_message"),
+                data.get("logs", ""),
+                data.get("created_at", datetime.now(timezone.utc).isoformat()),
+                data.get("updated_at", datetime.now(timezone.utc).isoformat())
+            ))
+            return data
+
+    @staticmethod
+    def update_deployment(org_id: str, deployment_id: str, update_data: Dict[str, Any]) -> bool:
+        with get_db_transaction() as conn:
+            set_clauses = []
+            values = []
+            for k, v in update_data.items():
+                set_clauses.append(f"{k} = ?")
+                values.append(v)
+            if not set_clauses:
+                return False
+            values.extend([deployment_id, org_id])
+            cur = conn.execute(
+                f"UPDATE workload_deployments SET {', '.join(set_clauses)} WHERE id = ? AND organization_id = ?",
+                values
+            )
+            return cur.rowcount > 0
+
+    @staticmethod
+    def get_deployment(org_id: str, deployment_id: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM workload_deployments WHERE id = ? AND organization_id = ?",
+                (deployment_id, org_id)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def list_deployments(org_id: str) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM workload_deployments WHERE organization_id = ? ORDER BY created_at DESC",
+                (org_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def delete_deployment(org_id: str, deployment_id: str) -> bool:
+        with get_db_transaction() as conn:
+            cur = conn.execute(
+                "DELETE FROM workload_deployments WHERE id = ? AND organization_id = ?",
+                (deployment_id, org_id)
+            )
+            return cur.rowcount > 0
 
 
 # Auto-initialize database schema and indexes on startup
