@@ -41,9 +41,10 @@ class ReadinessResponse(BaseModel):
 
 @router.get("/health", response_model=LivenessResponse)
 @router.get("/health/liveness", response_model=LivenessResponse)
+@router.get("/health/live", response_model=LivenessResponse)
 def liveness_check():
     """
-    K8s / ECS Liveness probe. Verifies the HTTP container is alive.
+    K8s / ECS / Render Liveness probe. Verifies the HTTP container is alive.
     Never exposes internal filesystem paths or database credentials.
     """
     now = datetime.now(timezone.utc)
@@ -59,6 +60,7 @@ def liveness_check():
 
 
 @router.get("/health/readiness", response_model=ReadinessResponse)
+@router.get("/health/ready", response_model=ReadinessResponse)
 def readiness_check(response: Response):
     """
     K8s / ECS Readiness probe. Verifies database connectivity and schema readiness.
