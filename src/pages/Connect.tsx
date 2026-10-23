@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 const CF_READ_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"
 Description: CloudPilot Production Read-Only Discovery Role (Role 1 of 2)
@@ -84,6 +86,12 @@ Resources:
 `;
 
 export default function Connect() {
+  usePageSEO({
+    title: 'Connect AWS & Azure Cloud Accounts',
+    description: 'Onboard AWS accounts via STS cross-account IAM roles or direct keys, and connect Azure subscriptions via Microsoft Entra ID.',
+    canonicalPath: '/connect',
+  });
+
   const navigate = useNavigate();
   const {
     accountConfig,
@@ -143,6 +151,7 @@ export default function Connect() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* ── Enterprise Security Architecture Banner ── */}
       <div
         className="apple-card"

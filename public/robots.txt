@@ -1,0 +1,19 @@
+# CloudPilot robots.txt
+# https://cloudpilot.io
+
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /privacy
+Allow: /contact
+Allow: /favicon.svg
+Allow: /og-image.svg
+
+# Disallow private tenant control plane and sensitive API routes
+Disallow: /api/
+Disallow: /passport/
+Disallow: /audit/
+Disallow: /settings/
+Disallow: /connect/
+
+Sitemap: https://cloudpilot.io/sitemap.xml

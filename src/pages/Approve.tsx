@@ -10,10 +10,18 @@ import SlideToApprove from '../components/SlideToApprove';
 import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 type Phase = 'review' | 'executing' | 'verified' | 'failed';
 
 export default function Approve() {
+  usePageSEO({
+    title: 'Approve & Execute Remediation',
+    description: 'Cryptographic Slide-to-Approve remediation execution, live verification, and blast-radius safe rollback mechanisms.',
+    canonicalPath: '/approve',
+  });
+
   const navigate = useNavigate();
   const { user } = useAuth();
   const {
@@ -128,6 +136,7 @@ export default function Approve() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>

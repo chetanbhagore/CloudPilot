@@ -5,8 +5,16 @@ import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
 import { type SafetyPassport } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 export default function PassportPage() {
+  usePageSEO({
+    title: 'Safety Passport™ Cryptographic Governance',
+    description: 'Human-in-the-loop safety passport with 5-point precondition verification, blast-radius bounds, and canonical parameter hashing.',
+    canonicalPath: '/passport',
+  });
+
   const navigate = useNavigate();
   const { user } = useAuth();
   const {
@@ -104,6 +112,7 @@ export default function PassportPage() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         <div>

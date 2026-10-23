@@ -1,0 +1,61 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <rect width="1200" height="630" fill="#0D1117"/>
+  <circle cx="200" cy="150" r="350" fill="url(#blue_glow)" opacity="0.45"/>
+  <circle cx="1000" cy="450" r="400" fill="url(#cyan_glow)" opacity="0.25"/>
+
+  <!-- Subtle grid pattern -->
+  <defs>
+    <radialGradient id="blue_glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 150) rotate(90) scale(350)">
+      <stop stop-color="#0071E3"/>
+      <stop offset="1" stop-color="#0071E3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyan_glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1000 450) rotate(90) scale(400)">
+      <stop stop-color="#30D158"/>
+      <stop offset="1" stop-color="#30D158" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="card_grad" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Card Border Container -->
+  <rect x="60" y="60" width="1080" height="510" rx="28" fill="url(#card_grad)" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+
+  <!-- Logo Mark -->
+  <g transform="translate(120, 130)">
+    <rect width="72" height="72" rx="20" fill="#0071E3"/>
+    <path d="M36 16L48 24V40L36 48L24 40V24L36 16Z" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" fill="none"/>
+    <circle cx="36" cy="32" r="5" fill="#30D158"/>
+  </g>
+
+  <!-- Brand Typography -->
+  <text x="212" y="180" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif" font-size="44" font-weight="800" fill="#FFFFFF" letter-spacing="-0.02em">
+    CloudPilot
+  </text>
+  <rect x="445" y="145" width="128" height="34" rx="17" fill="#30D158" fill-opacity="0.15" stroke="#30D158" stroke-width="1.5"/>
+  <text x="465" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" font-size="14" font-weight="700" fill="#30D158">
+    ENTERPRISE
+  </text>
+
+  <!-- Headline -->
+  <text x="120" y="300" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif" font-size="52" font-weight="700" fill="#FFFFFF" letter-spacing="-0.025em">
+    Understand your cloud.
+  </text>
+  <text x="120" y="365" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif" font-size="52" font-weight="700" fill="#0071E3" letter-spacing="-0.025em">
+    Approve the fix. <tspan fill="#30D158">Prove the outcome.</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="120" y="440" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" font-size="24" font-weight="400" fill="#86868B">
+    Autonomous AI multi-cloud governance with cryptographic Safety Passport™ locks.
+  </text>
+
+  <!-- Badges footer -->
+  <g transform="translate(120, 485)">
+    <text x="0" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" font-size="16" font-weight="600" fill="#F5F5F7">
+      AWS &amp; Azure Multi-Cloud &nbsp;•&nbsp; Zero Secret Retention &nbsp;•&nbsp; Immutable Audit Ledger
+    </text>
+  </g>
+</svg>

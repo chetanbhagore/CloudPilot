@@ -9,8 +9,16 @@ import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
 import { type AuditRecord } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 export default function AuditTrail() {
+  usePageSEO({
+    title: 'Tamper-Evident SHA-256 Audit Trail',
+    description: 'Cryptographically chained immutable audit records of all cloud remediation actions and verification certificates.',
+    canonicalPath: '/audit',
+  });
+
   const { auditRecords, activeHash, exportAuditCSV, activeScenario, appMode, backendUrl } = useDemo();
   const { user } = useAuth();
   const [showCertificate, setShowCertificate] = useState(false);
@@ -103,6 +111,7 @@ export default function AuditTrail() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* ── Cryptographic Ledger Status Banner ── */}
       <div
         className="apple-card"

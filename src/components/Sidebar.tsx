@@ -1,7 +1,7 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Search, ShieldCheck, CheckSquare,
-  BookOpen, Cloud, Zap, Settings, LogOut, Layers
+  BookOpen, Cloud, Zap, Settings, LogOut, Layers, Mail
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
 import { useAuth } from '../context/useAuth';
@@ -22,8 +22,9 @@ export default function Sidebar() {
   ];
 
   const governanceNav = [
-    { to: '/connect',   icon: Cloud,           label: 'AWS Accounts',    badge: '2 Active', badgeWarn: false },
+    { to: '/connect',   icon: Cloud,           label: 'Cloud Accounts',  badge: '2 Active', badgeWarn: false },
     { to: '/settings',  icon: Settings,        label: 'Settings & Team', badge: null, badgeWarn: false },
+    { to: '/contact',   icon: Mail,            label: 'Contact & Support', badge: null, badgeWarn: false },
   ];
 
   const handleLogout = () => {
@@ -106,6 +107,17 @@ export default function Sidebar() {
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
           {accountConfig.accountId} • {accountConfig.region}
         </div>
+      </div>
+
+      {/* Quick Internal Footer Links */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px', marginBottom: 10, fontSize: 11 }}>
+        <Link to="/privacy" style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--apple-blue)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
+          Privacy Policy
+        </Link>
+        <span style={{ color: 'var(--border-strong)' }}>•</span>
+        <Link to="/contact" style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--apple-blue)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
+          Support Ticket
+        </Link>
       </div>
 
       {/* Identified User Footer Card */}

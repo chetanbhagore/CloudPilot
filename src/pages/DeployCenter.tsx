@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 interface ScanData {
   framework: string;
@@ -34,6 +36,12 @@ interface DeploymentRecord {
 }
 
 export default function DeployCenter() {
+  usePageSEO({
+    title: 'Workload Deployments & Container Runner',
+    description: 'Autonomous Git repository scanner, non-root Dockerfile synthesis, and real-time container log streaming.',
+    canonicalPath: '/deploy',
+  });
+
   const { user } = useAuth();
   const backendUrl = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? 'https://cloudpilot-l3ht.onrender.com' : 'http://localhost:8000');
 
@@ -228,6 +236,7 @@ export default function DeployCenter() {
 
   return (
     <div className="layout-content" style={{ maxWidth: 1280, margin: '0 auto', paddingBottom: 60 }}>
+      <Breadcrumbs />
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
         <div>

@@ -8,8 +8,15 @@ import {
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
 
 export default function Overview() {
+  usePageSEO({
+    title: 'Multi-Cloud Governance Dashboard',
+    description: 'CloudPilot overview dashboard for AWS and Azure cost optimization, security risk posture, and Safety Passport verification.',
+    canonicalPath: '/',
+  });
+
   const navigate = useNavigate();
   const {
     activeScenario,

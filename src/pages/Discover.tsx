@@ -12,8 +12,16 @@ import { type Finding, type Severity } from '../data/mockData';
 import { type StatusFilter, type SortOption } from '../context/contextDefinition';
 import FindingDetailDrawer from '../components/FindingDetailDrawer';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 export default function Discover() {
+  usePageSEO({
+    title: 'Cloud Discovery & Misconfiguration Findings',
+    description: 'Inspect live AWS and Azure cloud findings, unattached EBS volumes, open security groups, and idle compute waste.',
+    canonicalPath: '/discover',
+  });
+
   const navigate = useNavigate();
   const {
     findings,
@@ -141,6 +149,7 @@ export default function Discover() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         <div>

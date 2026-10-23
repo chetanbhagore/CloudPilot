@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Zap, Shield, Lock, Mail, ArrowRight,
   Building, User, KeyRound, Sparkles
@@ -7,8 +7,15 @@ import {
 import { useAuth } from '../context/useAuth';
 import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
 
 export default function Login() {
+  usePageSEO({
+    title: 'Enterprise Single Sign-On & Authentication',
+    description: 'Sign in to CloudPilot to access multi-cloud telemetry, approve remediation passports, and manage cloud workspaces.',
+    canonicalPath: '/login',
+  });
+
   const navigate = useNavigate();
   const { login, signup, isAuthenticated } = useAuth();
   const { appMode } = useDemo();
@@ -600,6 +607,17 @@ export default function Login() {
                 </button>
               </>
             )}
+          </div>
+
+          {/* Public Footer Navigation Links */}
+          <div style={{ marginTop: 28, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, fontSize: 12, color: 'var(--text-tertiary)' }}>
+            <Link to="/privacy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--apple-blue)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
+              Privacy &amp; Security Policy
+            </Link>
+            <span>&bull;</span>
+            <Link to="/contact" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--apple-blue)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
+              Enterprise Pilot &amp; Support
+            </Link>
           </div>
         </div>
       </div>

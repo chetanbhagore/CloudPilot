@@ -270,6 +270,22 @@ def init_database_schema():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_remediation_idem ON remediation_executions(idempotency_key);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_workload_tenant ON workload_deployments(organization_id, status);")
 
+        # 10. Contact Submissions
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS contact_submissions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            organization TEXT DEFAULT '',
+            category TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT DEFAULT 'received',
+            created_at TEXT NOT NULL
+        );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_created ON contact_submissions(created_at);")
+
         # Seed Default Tenant Organizations if not present
         cursor.execute("""
         INSERT OR IGNORE INTO organizations (id, name, created_at)

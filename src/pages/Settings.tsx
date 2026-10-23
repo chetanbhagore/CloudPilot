@@ -7,8 +7,16 @@ import {
 import { useAuth, type TeamMember } from '../context/useAuth';
 import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
+import { usePageSEO } from '../hooks/usePageSEO';
+import Breadcrumbs from '../components/Breadcrumbs';
 
 export default function Settings() {
+  usePageSEO({
+    title: 'Workspace Settings & Team Governance',
+    description: 'Configure tenant organizations, team role-based access control, multi-cloud credentials, and billing.',
+    canonicalPath: '/settings',
+  });
+
   const navigate = useNavigate();
   const { user, teamMembers, updateUser, inviteTeamMember } = useAuth();
   const { accountConfig, disconnectAccount } = useDemo();
@@ -46,6 +54,7 @@ export default function Settings() {
 
   return (
     <div className="page-container">
+      <Breadcrumbs />
       {/* ── Page Header ── */}
       <div className="page-header">
         <div>
