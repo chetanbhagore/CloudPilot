@@ -259,7 +259,7 @@ export default function Discover() {
             CloudPilot Backend Service Unavailable
           </h3>
           <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', maxWidth: 580, margin: '0 auto 16px', lineHeight: 1.6 }}>
-            In live mode, CloudPilot communicates directly with AWS via the secure FastAPI backend. The backend service at <code>http://localhost:8000</code> is currently offline or unreachable. No live AWS telemetry can be gathered until the backend is active.
+            In live mode, CloudPilot communicates directly with AWS and Azure via the secure FastAPI backend. If the service was sleeping, it may take 15–30 seconds to wake up. Click Retry below.
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
             <button

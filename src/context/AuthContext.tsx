@@ -106,8 +106,8 @@ const INITIAL_NOTIFICATIONS: CloudNotification[] = [
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const backendUrl = typeof window !== 'undefined'
-    ? (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000')
-    : 'http://localhost:8000';
+    ? (import.meta.env.VITE_BACKEND_URL || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? 'https://cloudpilot-l3ht.onrender.com' : 'http://localhost:8000'))
+    : 'https://cloudpilot-l3ht.onrender.com';
 
   const [user, setUser] = useState<UserProfile>(() => {
     return safeGetStorageJSON<UserProfile>('cloudpilot_user', UNAUTHENTICATED_USER);

@@ -56,7 +56,7 @@ function getDemoAccount(scenario: ScenarioType): AccountConfig {
 }
 
 export function DemoProvider({ children }: { children: ReactNode }) {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? 'https://cloudpilot-l3ht.onrender.com' : 'http://localhost:8000');
 
   // App mode: defaults to 'live'. Stored in localStorage.
   const [appMode, setAppModeState] = useState<AppMode>(() => {
@@ -121,7 +121,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const checkBackendHealth = useCallback(async (): Promise<boolean> => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       const res = await fetch(`${backendUrl}/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
       const online = res.ok;
