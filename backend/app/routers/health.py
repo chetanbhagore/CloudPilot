@@ -103,3 +103,16 @@ def readiness_check(response: Response):
             timestamp=now,
             details="Database health check failed."
         )
+
+
+@router.get("/health/security-routine")
+@router.get("/api/v1/security/verify")
+def security_routine_check():
+    """Automated security parameter health routine.
+
+    Evaluates SSRF, Git injection, multi-tenant isolation, Safety Passport integrity,
+    cryptographic ledger chaining, JWT forgery defense, and container sandbox guardrails.
+    Returns whether all parameters match project expectations.
+    """
+    from app.services.security_routine import run_complete_security_routine
+    return run_complete_security_routine()
