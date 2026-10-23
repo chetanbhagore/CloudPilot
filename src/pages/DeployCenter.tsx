@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Terminal, Play, StopCircle, RefreshCw, Layers,
   ExternalLink, Copy, Check, AlertTriangle, Cpu,
@@ -55,14 +55,14 @@ export default function DeployCenter() {
   const [copied, setCopied] = useState(false);
   const [portStatus, setPortStatus] = useState<{ checked: boolean; inUse: boolean; port: number } | null>(null);
 
-  const getHeaders = () => {
+  const getHeaders = useCallback(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('cloudpilot_jwt_token') : null;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
-  };
+  }, []);
 
-  const fetchDeployments = async () => {
+  const fetchDeployments = useCallback(async () => {
     try {
       const res = await fetch(`${backendUrl}/api/v1/workloads/deployments`, { headers: getHeaders() });
       if (res.ok) {
@@ -75,11 +75,11 @@ export default function DeployCenter() {
     } catch {
       // Backend offline
     }
-  };
+  }, [backendUrl, getHeaders, activeDeployment]);
 
   useEffect(() => {
     fetchDeployments();
-  }, [backendUrl]);
+  }, [fetchDeployments]);
 
   const handleScanAndSynthesize = async () => {
     sound.playClick();
