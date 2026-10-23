@@ -79,7 +79,7 @@ USER appuser
 EXPOSE {port}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \\
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:' + str(os.getenv('PORT', '{port}')) + '/health')" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:' + str(os.getenv('PORT', '{port}')) + '/health')" || exit 1
 
 CMD ["sh", "-c", "uvicorn {entrypoint} --host 0.0.0.0 --port ${{PORT:-{port}}} --workers 2"]
 """
@@ -112,7 +112,7 @@ USER appuser
 EXPOSE {port}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:' + str(os.getenv('PORT', '{port}')) + '/_stcore/health')" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:' + str(os.getenv('PORT', '{port}')) + '/_stcore/health')" || exit 1
 
 CMD ["sh", "-c", "streamlit run {entrypoint} --server.port ${{PORT:-{port}}} --server.address 0.0.0.0"]
 """

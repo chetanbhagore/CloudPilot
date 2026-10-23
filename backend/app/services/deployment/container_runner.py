@@ -119,10 +119,47 @@ class ContainerRuntimeEngine:
             allocated_port = PortManager.find_available_port(preferred_port=preferred_port)
             build_dir = tempfile.mkdtemp(prefix=f"build_{app_name}_")
             try:
-                # Write Dockerfile
+                # Clone source repository into build directory
+                clone_cmd = ["git", "clone", "--depth", "1"]
+                if branch:
+                    clone_cmd.extend(["-b", branch.strip()])
+                clone_cmd.extend(["--", repo_url.strip(), build_dir])
+                clone_proc = subprocess.run(
+                    clone_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=60
+                )
+                if clone_proc.returncode != 0:
+                    err_msg = f"Git clone failed: {clone_proc.stderr[:400]}"
+                    failed_rec = {
+                        "id": dep_id,
+                        "app_name": app_name,
+                        "repo_url": repo_url,
+                        "branch": branch,
+                        "framework": framework,
+                        "language": language,
+                        "target": "local",
+                        "host_port": allocated_port,
+                        "container_port": preferred_port or 8080,
+                        "container_id": "",
+                        "status": "FAILED",
+                        "error_message": err_msg,
+                        "logs": clone_proc.stderr,
+                        "created_at": now,
+                        "updated_at": now
+                    }
+                    WorkloadRepository.create_deployment(org_id, failed_rec)
+                    return failed_rec
+
+                # Write Dockerfile into build directory
                 df_path = os.path.join(build_dir, "Dockerfile")
+                if not dockerfile_content:
+                    scan = RepoScanner.scan_directory(build_dir)
+                    dockerfile_content = DockerfileSynthesizer.generate(scan, custom_port=preferred_port or scan.default_port or 8080)
                 with open(df_path, "w", encoding="utf-8") as f:
-                    f.write(dockerfile_content or "FROM alpine:3.19\nCMD [\"echo\", \"Ready\"]\n")
+                    f.write(dockerfile_content)
 
                 tag = f"cloudpilot/{app_name.lower().replace(' ', '-')}:{dep_id[-6:]}"
                 build_cmd = ["docker", "build", "-t", tag, "."]
