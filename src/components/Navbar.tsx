@@ -11,7 +11,16 @@ import { sound } from '../utils/soundEngine';
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const { activeScenario, setScenario, accountConfig, appMode, setAppMode, isBackendOnline } = useDemo();
+  const {
+    accountConfig,
+    disconnectAccount,
+    scanLiveAWS,
+    isBackendOnline,
+    appMode,
+    setAppMode,
+    activeScenario,
+    setScenario
+  } = useDemo();
   const { user, logout, notifications, unreadCount, markNotificationRead, markAllNotificationsRead } = useAuth();
 
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
@@ -45,19 +54,17 @@ export default function Navbar() {
     setSoundEnabled(newState);
   };
 
-  const handleSyncState = () => {
+  const handleSyncState = async () => {
     sound.playClick();
     setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
+    try {
+      await scanLiveAWS();
       sound.playSnap();
-    }, 800);
-  };
-
-  const handleSwitchAccount = (s: 'fintech' | 'student') => {
-    sound.playClick();
-    setScenario(s);
-    setShowAccountMenu(false);
+    } catch {
+      // Handled in context
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleLogout = () => {
@@ -71,140 +78,213 @@ export default function Navbar() {
       {/* ── Left: Active Account & Environment Switcher ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <div style={{ position: 'relative' }} ref={accountMenuRef}>
-          <button
-            onClick={() => {
-              sound.playClick();
-              setShowAccountMenu(!showAccountMenu);
-            }}
-            className="sandbox-pill"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              background: '#FFFFFF',
-              border: '1px solid var(--border-medium)',
-              borderRadius: 9999,
-              fontSize: 13,
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              boxShadow: 'var(--shadow-sm)'
-            }}
-          >
-            <div style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: 'var(--apple-emerald)',
-              boxShadow: '0 0 0 2px rgba(48, 209, 88, 0.2)'
-            }} />
-            <span>{accountConfig.alias}</span>
-            <span style={{ color: 'var(--text-tertiary)', fontSize: 12, fontWeight: 400 }}>•</span>
-            <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
-              {accountConfig.region}
-            </span>
-            <ChevronDown size={14} color="var(--text-tertiary)" />
-          </button>
+          {accountConfig.isConnected ? (
+            <button
+              onClick={() => {
+                sound.playClick();
+                setShowAccountMenu(!showAccountMenu);
+              }}
+              className="sandbox-pill"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 14px',
+                background: '#FFFFFF',
+                border: '1px solid var(--border-medium)',
+                borderRadius: 9999,
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: 'var(--apple-emerald)',
+                boxShadow: '0 0 0 2px rgba(48, 209, 88, 0.2)'
+              }} />
+              <span>{accountConfig.alias || `AWS acct-${accountConfig.accountId}`}</span>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 12, fontWeight: 400 }}>•</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+                {accountConfig.region}
+              </span>
+              <ChevronDown size={14} color="var(--text-tertiary)" />
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                sound.playClick();
+                navigate('/connect');
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 14px',
+                background: 'rgba(0, 113, 227, 0.08)',
+                border: '1px solid rgba(0, 113, 227, 0.25)',
+                borderRadius: 9999,
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--apple-blue)',
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={14} />
+              <span>Connect AWS Account</span>
+            </button>
+          )}
 
           {/* Account Dropdown Menu */}
-          {showAccountMenu && (
+          {showAccountMenu && accountConfig.isConnected && (
             <div
               style={{
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 left: 0,
-                width: 320,
+                width: 340,
                 background: '#FFFFFF',
                 borderRadius: 14,
                 boxShadow: 'var(--shadow-floating)',
                 border: '1px solid var(--border-medium)',
-                padding: 8,
+                padding: 12,
                 zIndex: 100,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 4
+                gap: 8
               }}
             >
-              <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Connected AWS Accounts
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Connected AWS Account
               </div>
 
-              {/* Account 1 */}
-              <button
-                onClick={() => handleSwitchAccount('fintech')}
+              <div
                 style={{
-                  padding: '10px 12px',
+                  padding: '12px 14px',
                   borderRadius: 10,
-                  border: 'none',
-                  background: activeScenario === 'fintech' ? 'var(--apple-blue-light)' : 'transparent',
-                  color: activeScenario === 'fintech' ? 'var(--apple-blue)' : 'var(--text-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  textAlign: 'left',
-                  cursor: 'pointer'
+                  background: 'var(--apple-blue-light)',
+                  border: '1px solid rgba(0, 113, 227, 0.2)'
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>Production Core (FinTech MVP)</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    AWS: 8392-1049-2819 • ap-south-1
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--apple-blue)' }}>
+                    {accountConfig.alias || 'AWS Live Account'}
                   </div>
+                  <CheckCircle2 size={16} color="var(--apple-blue)" />
                 </div>
-                {activeScenario === 'fintech' && <CheckCircle2 size={16} color="var(--apple-blue)" />}
-              </button>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                  ID: {accountConfig.accountId} • {accountConfig.region}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                  Role: <code style={{ fontFamily: 'var(--font-mono)' }}>{accountConfig.roleName}</code>
+                </div>
+              </div>
 
-              {/* Account 2 */}
-              <button
-                onClick={() => handleSwitchAccount('student')}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: activeScenario === 'student' ? 'var(--apple-blue-light)' : 'transparent',
-                  color: activeScenario === 'student' ? 'var(--apple-blue)' : 'var(--text-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>Research & ML Lab Sandbox</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    AWS: 9182-4729-1039 • us-east-1
+              {appMode === 'demo' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Demo Scenario Sandbox
                   </div>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      setScenario('fintech');
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: activeScenario === 'fintech' ? '1px solid var(--apple-blue)' : '1px solid var(--border-medium)',
+                      background: activeScenario === 'fintech' ? 'var(--apple-blue-light)' : 'transparent',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 12 }}>[DEMO] FinTech Core MVP</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>ap-south-1 • 1234-5678-9012</div>
+                    </div>
+                    {activeScenario === 'fintech' && <CheckCircle2 size={15} color="var(--apple-blue)" />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      setScenario('student');
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: activeScenario === 'student' ? '1px solid var(--apple-blue)' : '1px solid var(--border-medium)',
+                      background: activeScenario === 'student' ? 'var(--apple-blue-light)' : 'transparent',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 12 }}>[DEMO] Student ML Sandbox</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>us-east-1 • 9876-5432-1098</div>
+                    </div>
+                    {activeScenario === 'student' && <CheckCircle2 size={15} color="var(--apple-blue)" />}
+                  </button>
                 </div>
-                {activeScenario === 'student' && <CheckCircle2 size={16} color="var(--apple-blue)" />}
-              </button>
+              )}
 
               <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
 
-              <button
-                onClick={() => {
-                  sound.playClick();
-                  setShowAccountMenu(false);
-                  navigate('/connect');
-                }}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--apple-blue)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  cursor: 'pointer'
-                }}
-              >
-                <Plus size={14} />
-                <span>Connect New AWS Account</span>
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    sound.playClick();
+                    setShowAccountMenu(false);
+                    navigate('/connect');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    background: 'transparent',
+                    color: 'var(--apple-blue)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={13} />
+                  <span>Connect Another</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playSnap();
+                    setShowAccountMenu(false);
+                    disconnectAccount();
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255, 59, 48, 0.2)',
+                    background: 'rgba(255, 59, 48, 0.04)',
+                    color: 'var(--apple-red)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -225,7 +305,7 @@ export default function Navbar() {
           <span>Two-Role IAM Active</span>
         </div>
 
-        {/* ── Mode Switcher: Demo Mode ↔ Live AWS Mode ── */}
+        {/* ── Mode Switcher: Live AWS Mode ↔ Demo Simulation ── */}
         <div
           style={{
             display: 'inline-flex',
@@ -237,40 +317,6 @@ export default function Navbar() {
             gap: 2
           }}
         >
-          <button
-            onClick={() => {
-              sound.playClick();
-              setAppMode('demo');
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              borderRadius: 9999,
-              border: 'none',
-              background: appMode === 'demo' ? '#FFFFFF' : 'transparent',
-              color: appMode === 'demo' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-              fontWeight: appMode === 'demo' ? 600 : 500,
-              fontSize: 11.5,
-              cursor: 'pointer',
-              boxShadow: appMode === 'demo' ? 'var(--shadow-sm)' : 'none',
-              transition: 'all 160ms ease'
-            }}
-            title="Demo Mode: Presentation fallback using deterministic scenarios"
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                background: 'var(--apple-emerald)',
-                boxShadow: appMode === 'demo' ? '0 0 0 2px rgba(48, 209, 88, 0.25)' : 'none'
-              }}
-            />
-            <span>Demo Mode</span>
-          </button>
-
           <button
             onClick={() => {
               sound.playClick();
@@ -291,39 +337,60 @@ export default function Navbar() {
               boxShadow: appMode === 'live' ? '0 2px 8px rgba(0, 113, 227, 0.35)' : 'none',
               transition: 'all 160ms ease'
             }}
-            title="Live AWS Mode: Query real AWS account via STS AssumeRole"
+            title="Live AWS Mode: Discovers and manages real AWS account resources via STS AssumeRole"
           >
             <Zap size={12} fill={appMode === 'live' ? '#FFFFFF' : 'none'} />
-            <span>Live Mode</span>
-            {isBackendOnline ? (
-              <span
-                style={{
-                  fontSize: 9,
-                  background: appMode === 'live' ? 'rgba(255,255,255,0.25)' : 'var(--apple-emerald-light)',
-                  color: appMode === 'live' ? '#FFFFFF' : 'var(--apple-emerald-dark)',
-                  padding: '1px 5px',
-                  borderRadius: 9999,
-                  fontWeight: 700
-                }}
-              >
-                ONLINE
-              </span>
-            ) : (
-              <span
-                style={{
-                  fontSize: 9,
-                  background: appMode === 'live' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.05)',
-                  color: appMode === 'live' ? '#FFFFFF' : 'var(--text-tertiary)',
-                  padding: '1px 5px',
-                  borderRadius: 9999
-                }}
-              >
-                STANDBY
-              </span>
-            )}
+            <span>Live AWS</span>
+            <span
+              style={{
+                fontSize: 9,
+                background: appMode === 'live' ? 'rgba(255,255,255,0.25)' : isBackendOnline ? 'var(--apple-emerald-light)' : 'rgba(255,59,48,0.1)',
+                color: appMode === 'live' ? '#FFFFFF' : isBackendOnline ? 'var(--apple-emerald-dark)' : 'var(--apple-red)',
+                padding: '1px 5px',
+                borderRadius: 9999,
+                fontWeight: 700
+              }}
+            >
+              {isBackendOnline ? 'ONLINE' : 'STANDBY'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playClick();
+              setAppMode('demo');
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: 9999,
+              border: 'none',
+              background: appMode === 'demo' ? '#FFFFFF' : 'transparent',
+              color: appMode === 'demo' ? 'var(--apple-amber-dark)' : 'var(--text-tertiary)',
+              fontWeight: appMode === 'demo' ? 600 : 500,
+              fontSize: 11.5,
+              cursor: 'pointer',
+              boxShadow: appMode === 'demo' ? 'var(--shadow-sm)' : 'none',
+              transition: 'all 160ms ease'
+            }}
+            title="Demo Sandbox: Safe presentation environment using synthetic fixtures"
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: 'var(--apple-amber)',
+                boxShadow: appMode === 'demo' ? '0 0 0 2px rgba(255, 159, 10, 0.3)' : 'none'
+              }}
+            />
+            <span>Demo Mode</span>
           </button>
         </div>
       </div>
+
 
       {/* ── Right: Sync Button, Sound, Notifications, & User Profile ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

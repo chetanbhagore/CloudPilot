@@ -32,6 +32,7 @@ __pycache__/
 env/
 venv/
 *.sqlite3
+*.db
 backend/data/
 scratch/
 agent_log.jsonl

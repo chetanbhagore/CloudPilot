@@ -17,26 +17,27 @@ function safeGetStorageJSON<T>(key: string, fallback: T): T {
   }
 }
 
-const DEFAULT_USER: UserProfile = {
-  id: 'usr_cp_883921',
-  name: 'Chetan Bhagore',
-  email: 'chetan@cloudpilot.io',
-  role: 'Owner',
-  organization: 'Acme Cloud Technologies',
-  organizationSlug: 'acme-cloud',
+const UNAUTHENTICATED_USER: UserProfile = {
+  id: '',
+  name: 'Unauthenticated User',
+  email: '',
+  role: 'Viewer',
+  organization: '',
+  organizationSlug: '',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  plan: 'Startup Pro',
-  mfaEnabled: true,
-  joinedDate: 'Jan 2026',
-  activeAwsAccounts: 2,
-  maxAwsAccounts: 10
+  plan: 'Starter',
+  mfaEnabled: false,
+  joinedDate: '',
+  activeAwsAccounts: 0,
+  maxAwsAccounts: 10,
+  isServerVerified: false
 };
 
 const INITIAL_TEAM: TeamMember[] = [
   {
     id: 'tm_1',
-    name: 'Chetan Bhagore',
-    email: 'chetan@cloudpilot.io',
+    name: 'Sarah Jenkins',
+    email: 'admin@acmecloud.io',
     role: 'Owner',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     status: 'active',
@@ -44,8 +45,8 @@ const INITIAL_TEAM: TeamMember[] = [
   },
   {
     id: 'tm_2',
-    name: 'Sarah Jenkins',
-    email: 'sarah.j@acmecloud.io',
+    name: 'Marcus Vance',
+    email: 'devops@acmecloud.io',
     role: 'DevOps Lead',
     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
     status: 'active',
@@ -53,8 +54,8 @@ const INITIAL_TEAM: TeamMember[] = [
   },
   {
     id: 'tm_3',
-    name: 'Alex Rivera',
-    email: 'alex.r@acmecloud.io',
+    name: 'Elena Rostova',
+    email: 'analyst@acmecloud.io',
     role: 'Security Analyst',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     status: 'active',
@@ -62,9 +63,9 @@ const INITIAL_TEAM: TeamMember[] = [
   },
   {
     id: 'tm_4',
-    name: 'Priya Sharma',
-    email: 'priya.s@acmecloud.io',
-    role: 'Admin',
+    name: 'Tom Bradley',
+    email: 'viewer@acmecloud.io',
+    role: 'Viewer',
     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     status: 'invited',
     lastActive: 'Invited 1d ago'
@@ -75,31 +76,31 @@ const INITIAL_NOTIFICATIONS: CloudNotification[] = [
   {
     id: 'notif_1',
     title: 'Critical Security Exposure',
-    message: 'Port 22 SSH ingress open to 0.0.0.0/0 on production security group sg-0a81b2c3d4e5f6789.',
+    message: 'Port 22 SSH ingress open to 0.0.0.0/0 on production security group.',
     severity: 'critical',
     timestamp: '2m ago',
     read: false,
     findingId: 'SEC-001',
-    accountId: '8392-1049-2819'
+    accountId: '1234-5678-9012'
   },
   {
     id: 'notif_2',
     title: 'Idle Resource Spend Alert',
-    message: '500 GiB gp3 EBS volume has had 0 IOPS for 23 consecutive days (~$40.00/mo waste).',
+    message: '500 GiB gp3 EBS volume has had 0 IOPS for 23 consecutive days.',
     severity: 'warning',
     timestamp: '1h ago',
     read: false,
     findingId: 'COST-002',
-    accountId: '8392-1049-2819'
+    accountId: '1234-5678-9012'
   },
   {
     id: 'notif_3',
     title: 'Audit Ledger Receipt Generated',
-    message: 'Cryptographic SHA-256 receipt verified for remediation operation on Mumbai cluster.',
+    message: 'Cryptographic SHA-256 receipt verified for remediation operation.',
     severity: 'info',
     timestamp: 'Yesterday',
     read: true,
-    accountId: '8392-1049-2819'
+    accountId: '1234-5678-9012'
   }
 ];
 
@@ -109,21 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     : 'http://localhost:8000';
 
   const [user, setUser] = useState<UserProfile>(() => {
-    return safeGetStorageJSON<UserProfile>('cloudpilot_user', DEFAULT_USER);
+    return safeGetStorageJSON<UserProfile>('cloudpilot_user', UNAUTHENTICATED_USER);
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      if (typeof window === 'undefined') return true;
+      if (typeof window === 'undefined') return false;
       const savedAuth = localStorage.getItem('cloudpilot_authenticated');
-      if (savedAuth === 'false') return false;
-      if (savedAuth === 'true') return true;
       const token = localStorage.getItem('cloudpilot_jwt_token');
-      if (token && token !== 'undefined') return true;
-      // Default to true with pre-configured demo user on first launch
-      return true;
+      if (savedAuth === 'true' && token && token !== 'undefined') {
+        return true;
+      }
+      return false;
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -145,18 +145,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   email: me.email,
                   name: me.name,
                   role: me.role,
-                  organization: me.organization_id,
+                  organization: me.organization_name || me.organization_id,
+                  organizationSlug: me.organization_id.replace(/^org-/, ''),
                   permissions: me.permissions,
                   isServerVerified: true
                 }));
                 setIsAuthenticated(true);
-              } else if (localStorage.getItem('cloudpilot_app_mode') === 'live') {
-                // Stale or revoked token in live mode fails closed
+              } else {
+                // Stale or revoked token fails closed
                 localStorage.removeItem('cloudpilot_jwt_token');
+                localStorage.setItem('cloudpilot_authenticated', 'false');
                 setIsAuthenticated(false);
+                setUser(UNAUTHENTICATED_USER);
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              // Network error or backend offline
+            });
         }
       } catch {}
     }
@@ -178,14 +183,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         localStorage.setItem('cloudpilot_jwt_token', data.access_token);
-        localStorage.setItem('cloudpilot_authenticated', JSON.stringify(true));
+        localStorage.setItem('cloudpilot_authenticated', 'true');
         const verifiedUser: UserProfile = {
           ...user,
           id: data.user.id,
           email: data.user.email,
           name: data.user.name,
           role: data.user.role,
-          organization: data.user.organization_id,
+          organization: data.user.organization_name || data.user.organization_id,
+          organizationSlug: data.user.organization_id.replace(/^org-/, ''),
           permissions: data.user.permissions,
           isServerVerified: true
         };
@@ -194,32 +200,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsAuthenticated(true);
         return true;
       }
-    } catch (_err) {
-      // Backend unavailable fallback
-    }
-
-    // In explicit demo mode, allow simulated persona
-    const isDemo = typeof window !== 'undefined' && localStorage.getItem('cloudpilot_app_mode') === 'demo';
-    if (isDemo && email && email.includes('@')) {
-      setIsAuthenticated(true);
-      localStorage.setItem('cloudpilot_authenticated', JSON.stringify(true));
-      const demoUser: UserProfile = {
-        ...user,
-        email,
-        name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        role: 'DevOps Lead',
-        isServerVerified: false
-      };
-      setUser(demoUser);
-      localStorage.setItem('cloudpilot_user', JSON.stringify(demoUser));
-      return true;
+    } catch {
+      // Backend unavailable or network error
     }
 
     return false;
   };
 
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+    organizationName: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`${backendUrl}/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          organization_name: organizationName
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('cloudpilot_jwt_token', data.access_token);
+        localStorage.setItem('cloudpilot_authenticated', 'true');
+        const newUser: UserProfile = {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          role: data.user.role,
+          organization: data.user.organization_name || data.user.organization_id,
+          organizationSlug: data.user.organization_id.replace(/^org-/, ''),
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+          plan: 'Startup Pro',
+          mfaEnabled: false,
+          joinedDate: 'Just now',
+          activeAwsAccounts: 0,
+          maxAwsAccounts: 10,
+          permissions: data.user.permissions,
+          token: data.access_token,
+          isServerVerified: true
+        };
+        setUser(newUser);
+        localStorage.setItem('cloudpilot_user', JSON.stringify(newUser));
+        setIsAuthenticated(true);
+        return { success: true };
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errData.detail || 'Sign-up failed. Please verify credentials.'
+        };
+      }
+    } catch {
+      return {
+        success: false,
+        error: 'Authentication service unreachable. Ensure backend server is running.'
+      };
+    }
+  };
+
   const logout = () => {
     setIsAuthenticated(false);
+    setUser(UNAUTHENTICATED_USER);
     try {
       localStorage.setItem('cloudpilot_authenticated', 'false');
       localStorage.removeItem('cloudpilot_jwt_token');
@@ -265,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unreadCount,
         isAuthenticated,
         login,
+        signup,
         logout,
         markNotificationRead,
         markAllNotificationsRead,

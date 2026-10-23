@@ -23,7 +23,7 @@ export interface AccountConfig {
 }
 
 export interface DemoContextType {
-  // App Mode (Demo vs Live AWS)
+  // App Mode (Live AWS Operations)
   appMode: AppMode;
   setAppMode: (mode: AppMode) => void;
   isBackendOnline: boolean;
@@ -51,7 +51,7 @@ export interface DemoContextType {
   activeHash: string;
   selectedFindingId: string;
   setSelectedFindingId: (id: string) => void;
-  getActiveFinding: () => Finding;
+  getActiveFinding: () => Finding | null;
   getFindingById: (id: string) => Finding | undefined;
   approveRemediation: (findingId?: string) => Promise<void>;
   resetDemo: () => void;
@@ -75,3 +75,4 @@ export interface DemoContextType {
 }
 
 export const DemoContext = createContext<DemoContextType | null>(null);
+

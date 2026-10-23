@@ -32,6 +32,12 @@ class TestPhase1LiveDemoSeparation(unittest.TestCase):
     def setUp(self):
         _connected_accounts.clear()
         _cached_findings.clear()
+        try:
+            from app.db.database import get_db_transaction
+            with get_db_transaction() as conn:
+                conn.execute("DELETE FROM findings WHERE execution_mode = 'live'")
+        except Exception:
+            pass
 
     # ── Test 1: Demo mode is isolated and clearly labeled ────────────────────────
     def test_demo_mode_isolated_and_labeled(self):

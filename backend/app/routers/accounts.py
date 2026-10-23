@@ -29,13 +29,24 @@ router = APIRouter(prefix="/accounts", tags=["Accounts"])
 _connected_accounts: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/connect", response_model=AccountConnectResponse)
-def connect_account(request: AccountConnectRequest):
+def connect_account(
+    request: AccountConnectRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(get_current_user)
+):
     """
     Connects an AWS account using STS AssumeRole with ExternalId confused-deputy defense.
     FAILS CLOSED in live mode: If AWS credentials or AssumeRole permissions are missing or invalid,
     reports real failure and refuses to register connection.
     Demo mode is isolated and clearly labeled.
     """
+    user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    if user and not user.is_demo:
+        org_id = user.organization_id
+    elif user:
+        org_id = user.organization_id
+    else:
+        org_id = "org-demo-simulated" if request.mode == "demo" else "org-acme-prod"
+
     sanitized_id = request.account_id.replace("-", "").strip()
     if len(sanitized_id) != 12 or not sanitized_id.isdigit():
         raise HTTPException(
@@ -50,7 +61,7 @@ def connect_account(request: AccountConnectRequest):
 
     # ── Demo Mode Handling ──
     if request.mode == "demo":
-        logger.info(f"[Accounts] Registering simulated demo account {sanitized_id}")
+        logger.info(f"[Accounts] Registering simulated demo account {sanitized_id} for org {org_id}")
         demo_session = generate_demo_sts_session(
             account_id=sanitized_id,
             role_arn=request.role_arn,
@@ -70,8 +81,9 @@ def connect_account(request: AccountConnectRequest):
             "connected_at": datetime.now(timezone.utc).isoformat()
         }
         _connected_accounts[f"demo:{sanitized_id}"] = account_info
+        _connected_accounts[f"{org_id}:{sanitized_id}"] = account_info
         try:
-            AccountRepository.save_account("org-acme-prod", account_info)
+            AccountRepository.save_account(org_id, account_info)
         except Exception as e:
             logger.warning(f"[DB] Non-fatal DB save error for demo account: {e}")
 
@@ -90,7 +102,7 @@ def connect_account(request: AccountConnectRequest):
         )
 
     # ── Live AWS Mode Handling ──
-    logger.info(f"[Accounts] Initiating live STS verification for {sanitized_id} with {request.role_arn}")
+    logger.info(f"[Accounts] Initiating live STS verification for {sanitized_id} with {request.role_arn} (Tenant: {org_id})")
     try:
         sts_session = assume_role(
             role_arn=request.role_arn,
@@ -114,12 +126,13 @@ def connect_account(request: AccountConnectRequest):
             "connected_at": datetime.now(timezone.utc).isoformat()
         }
         _connected_accounts[f"live:{sanitized_id}"] = account_info
+        _connected_accounts[f"{org_id}:{sanitized_id}"] = account_info
         try:
-            AccountRepository.save_account("org-acme-prod", account_info)
+            AccountRepository.save_account(org_id, account_info)
         except Exception as e:
             logger.warning(f"[DB] Non-fatal DB save error for live account: {e}")
 
-        logger.info(f"[Accounts] Account {sanitized_id} verified and connected via live AWS STS")
+        logger.info(f"[Accounts] Account {sanitized_id} verified and connected via live AWS STS for tenant {org_id}")
 
         return AccountConnectResponse(
             success=True,
@@ -149,15 +162,43 @@ def connect_account(request: AccountConnectRequest):
         raise HTTPException(status_code=500, detail=f"Unexpected error establishing AWS connection: {str(e)}")
 
 @router.get("", response_model=List[Dict[str, Any]])
-def list_accounts(mode: Optional[str] = Query(None, description="Filter accounts by execution mode ('live' or 'demo')")):
+def list_accounts(
+    mode: Optional[str] = Query(None, description="Filter accounts by execution mode ('live' or 'demo')"),
+    current_user: Optional[AuthenticatedUser] = Depends(get_current_user)
+):
     """
-    Lists connected AWS accounts filtered by mode.
+    Lists connected AWS accounts filtered by mode and strictly scoped to current tenant.
+    Syncs with persistent database store to survive server restarts.
     """
-    accounts = list(_connected_accounts.values())
+    user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    org_id = user.organization_id if user and not user.is_demo else "org-acme-prod"
     mode_str = mode if isinstance(mode, str) else None
-    if mode_str:
-        accounts = [a for a in accounts if a.get("execution_mode") == mode_str]
-    return accounts
+    try:
+        db_accounts = AccountRepository.get_accounts(org_id, mode=mode_str)
+        results = []
+        for acc in db_accounts:
+            k = f"{acc.get('execution_mode', 'live')}:{acc['account_id']}"
+            acc_dict = {
+                "account_id": acc["account_id"],
+                "alias": acc.get("alias") or f"AWS Live ({acc['region']})",
+                "region": acc["region"],
+                "role_arn": acc["role_arn"],
+                "external_id": acc["external_id"],
+                "assumed_role_user_arn": acc.get("assumed_role_user_arn"),
+                "session_expiration": acc.get("session_expiration"),
+                "is_live": acc.get("execution_mode") == "live",
+                "execution_mode": acc.get("execution_mode", "live"),
+                "connection_status": acc.get("status", "connected"),
+                "connected_at": acc.get("connected_at")
+            }
+            _connected_accounts[k] = acc_dict
+            _connected_accounts[f"{org_id}:{acc['account_id']}"] = acc_dict
+            results.append(acc_dict)
+        return results
+    except Exception as e:
+        logger.warning(f"[Accounts] Error loading DB accounts: {e}")
+        return []
+
 
 @router.get("/external-id")
 def generate_external_id(
@@ -176,29 +217,48 @@ def generate_external_id(
     }
 
 @router.delete("/{account_id}")
-def disconnect_account(account_id: str, mode: str = "live"):
+def disconnect_account(
+    account_id: str,
+    mode: str = "live",
+    current_user: Optional[AuthenticatedUser] = Depends(get_current_user)
+):
     """
-    Disconnects and removes an AWS account from the active registry.
+    Disconnects and removes an AWS account from the active tenant registry.
     Returns complete AWS CLI and CloudFormation revocation procedure.
     """
+    user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    org_id = user.organization_id if user and not user.is_demo else "org-acme-prod"
     sanitized_id = account_id.replace("-", "").strip()
-    key = f"{mode}:{sanitized_id}"
     deleted = False
-    if key in _connected_accounts:
-        del _connected_accounts[key]
-        deleted = True
-    
+
+    key_org = f"{org_id}:{sanitized_id}"
+    key_org_mode = f"{org_id}:{mode}:{sanitized_id}"
+
     try:
-        db_deleted = AccountRepository.delete_account("org-acme-prod", sanitized_id, mode)
-        deleted = deleted or db_deleted
+        db_deleted = AccountRepository.delete_account(org_id, sanitized_id, mode)
+        deleted = db_deleted
     except Exception as e:
         logger.warning(f"[DB] Non-fatal DB delete error: {e}")
+
+    if key_org in _connected_accounts:
+        del _connected_accounts[key_org]
+        deleted = True
+    if key_org_mode in _connected_accounts:
+        del _connected_accounts[key_org_mode]
+        deleted = True
+
+    key_mode = f"{mode}:{sanitized_id}"
+    if key_mode in _connected_accounts:
+        acc_org = _connected_accounts[key_mode].get("organization_id", "org-acme-prod")
+        if user is None or acc_org == org_id:
+            del _connected_accounts[key_mode]
+            deleted = True
 
     if deleted:
         return {
             "success": True,
             "account_id": sanitized_id,
-            "message": f"Account {sanitized_id} successfully disconnected from CloudPilot registry.",
+            "message": f"Account {sanitized_id} successfully disconnected from CloudPilot registry for tenant {org_id}.",
             "revocation_procedure": {
                 "step1": "Account connection removed and credentials evicted from memory.",
                 "step2_aws_cli": "To revoke all trust on AWS, delete the CloudFormation stack:",

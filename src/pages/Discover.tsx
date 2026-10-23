@@ -47,18 +47,12 @@ export default function Discover() {
   const handleRunScan = async () => {
     sound.playClick();
     setIsScanning(true);
-    if (appMode === 'live') {
-      setScanMessage(`Assuming Role arn:aws:iam::${accountConfig.accountId}:role/${accountConfig.roleName} in ${accountConfig.region}...`);
-      const scanRes = await scanLiveAWS();
-      if (scanRes.success) {
-        sound.playSuccess();
-      } else {
-        sound.playSnap();
-      }
-    } else {
-      setScanMessage('Scanning simulated resources across VPC, EC2, S3, EBS, and IAM...');
-      await new Promise((r) => setTimeout(r, 1000));
+    setScanMessage(`Querying AWS APIs via STS AssumeRole in ${accountConfig.region}...`);
+    const scanRes = await scanLiveAWS();
+    if (scanRes.success) {
       sound.playSuccess();
+    } else {
+      sound.playSnap();
     }
     setIsScanning(false);
     setScanMessage(null);
@@ -146,38 +140,51 @@ export default function Discover() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span className="badge badge-info">STAGE 2 OF 5</span>
             <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-              Discovery & Evidence • {accountConfig.alias} ({accountConfig.region})
+              {accountConfig.isConnected ? `AWS Account: ${accountConfig.accountId} (${accountConfig.region})` : 'No AWS Account Connected'}
             </span>
           </div>
           <h1 className="display-title" style={{ marginBottom: 6 }}>
-            Cloud Investigation Workspace
+            Live AWS Investigation Workspace
           </h1>
           <p className="body-lead">
-            {appMode === 'live'
-              ? `${findings.length} findings verified against active AWS resources. Click any card to inspect evidence and review the pre-generated Safety Passport.`
-              : `${findings.length} simulated findings evaluated. Click any card to inspect simulated telemetry and review the Safety Passport.`}
+            {accountConfig.isConnected
+              ? `${findings.length} live findings queried from active AWS resources. Click any card to inspect evidence and review the pre-generated Safety Passport.`
+              : 'Connect your AWS account via cross-account IAM Role to inspect live EC2 instances, EBS volumes, and security groups.'}
           </p>
         </div>
 
-        <button
-          onClick={handleRunScan}
-          disabled={isScanning || (appMode === 'live' && !isBackendOnline)}
-          className="btn btn-secondary"
-          title="Refresh telemetry queries via AWS STS or simulation"
-        >
-          <RefreshCw size={14} className={isScanning ? 'spin' : ''} />
-          <span>{isScanning ? 'Scanning Telemetry…' : appMode === 'live' ? 'Trigger Live AWS Scan' : 'Trigger Deep Scan'}</span>
-        </button>
+        {accountConfig.isConnected ? (
+          <button
+            onClick={handleRunScan}
+            disabled={isScanning || !isBackendOnline}
+            className="btn btn-secondary"
+            title="Scan live AWS resources via STS AssumeRole"
+          >
+            <RefreshCw size={14} className={isScanning ? 'spin' : ''} />
+            <span>{isScanning ? 'Querying AWS APIs…' : 'Trigger Live AWS Scan'}</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              sound.playClick();
+              navigate('/connect');
+            }}
+            className="btn btn-primary"
+          >
+            <Zap size={14} />
+            <span>Connect Real AWS Account</span>
+          </button>
+        )}
       </div>
 
-      {/* ── Mode Status Ribbon (Demo Mode vs Live AWS Mode) ── */}
+      {/* ── Mode Status Ribbon ── */}
       <div
         className="apple-card"
         style={{
           padding: '12px 18px',
           marginBottom: 20,
-          background: appMode === 'live' ? 'rgba(0, 113, 227, 0.05)' : 'rgba(48, 209, 88, 0.05)',
-          borderColor: appMode === 'live' ? 'rgba(0, 113, 227, 0.2)' : 'rgba(48, 209, 88, 0.2)',
+          background: accountConfig.isConnected ? 'rgba(0, 113, 227, 0.05)' : 'rgba(142, 142, 147, 0.05)',
+          borderColor: accountConfig.isConnected ? 'rgba(0, 113, 227, 0.2)' : 'var(--border-medium)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -186,30 +193,28 @@ export default function Discover() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {appMode === 'live' ? (
-            <Zap size={16} color="var(--apple-blue)" />
-          ) : (
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
-          )}
-          <div style={{ fontSize: 13, fontWeight: 600, color: appMode === 'live' ? 'var(--apple-blue)' : 'var(--apple-emerald-dark)' }}>
-            {appMode === 'live'
-              ? `LIVE AWS DISCOVERY MODE — Telemetry queried via STS AssumeRole (${accountConfig.accountId} • ${accountConfig.region})`
-              : `EVALUATOR DEMO SANDBOX — Seeded with realistic cloud anomalies (${accountConfig.alias})`}
+          <Zap size={16} color="var(--apple-blue)" fill="currentColor" />
+          <div style={{ fontSize: 13, fontWeight: 600, color: accountConfig.isConnected ? 'var(--apple-blue)' : 'var(--text-primary)' }}>
+            {accountConfig.isConnected
+              ? `LIVE AWS MODE — Scoped read-only telemetry queried via STS AssumeRole (acct-${accountConfig.accountId})`
+              : 'LIVE AWS MODE — Ready to connect target AWS account'}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          {appMode === 'live' ? (
+          {accountConfig.isConnected ? (
             <span>
-              Target: <code style={{ fontFamily: 'var(--font-mono)' }}>{accountConfig.roleName}</code>
-              {` • Connection: ${liveConnectionStatus.toUpperCase()}`}
-              {isBackendOnline ? ' • Backend API: Online' : ' • Backend API: Offline (Run python backend/run.py)'}
+              Role: <code style={{ fontFamily: 'var(--font-mono)' }}>{accountConfig.roleName}</code>
+              {` • Region: ${accountConfig.region}`}
+              {` • Status: ${liveConnectionStatus.toUpperCase()}`}
+              {isBackendOnline ? ' • Backend API: Online' : ' • Backend API: Offline'}
             </span>
           ) : (
-            <span>Deterministic Evaluator Mode • Use navbar toggle to test Live AWS Mode</span>
+            <span>Status: {liveConnectionStatus.toUpperCase()} • Zero static AWS keys stored • Cryptographic ExternalId verified</span>
           )}
         </div>
       </div>
+
 
       {/* ── Stale Data Warning Banner ── */}
       {isStaleData && lastScannedAt && (
@@ -484,8 +489,30 @@ export default function Discover() {
         )}
       </div>
 
-      {/* ── Empty Live Scan (Zero Findings Detected) ── */}
-      {appMode === 'live' && liveScanStatus === 'empty' && findings.length === 0 ? (
+      {/* ── Disconnected Account State ── */}
+      {!accountConfig.isConnected ? (
+        <div className="apple-card" style={{ textAlign: 'center', padding: '56px 24px', background: '#FFFFFF' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--apple-blue-light)', color: 'var(--apple-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Zap size={26} fill="currentColor" />
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>No AWS Account Connected</h2>
+          <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>
+            Connect your target AWS environment using our CloudFormation IAM template. Once connected, CloudPilot will run live read-only queries to detect unattached EBS storage and open security group exposures.
+          </p>
+          <button
+            onClick={() => {
+              sound.playClick();
+              navigate('/connect');
+            }}
+            className="btn btn-primary btn-lg"
+            style={{ margin: '0 auto' }}
+          >
+            <Zap size={16} />
+            <span>Connect Real AWS Account</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      ) : liveScanStatus === 'empty' && findings.length === 0 ? (
         <div className="apple-card" style={{ textAlign: 'center', padding: '48px 24px', background: '#FAFDFB', borderColor: 'rgba(48, 209, 88, 0.35)' }}>
           <CheckCircle2 size={36} color="var(--apple-emerald)" style={{ margin: '0 auto 12px' }} />
           <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--apple-emerald-dark)', marginBottom: 6 }}>
@@ -509,16 +536,16 @@ export default function Discover() {
         <div className="apple-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <Search size={32} color="var(--text-tertiary)" style={{ margin: '0 auto 12px' }} />
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
-            {appMode === 'live' && liveScanStatus === 'idle'
-              ? 'No live scan performed yet'
+            {liveScanStatus === 'idle'
+              ? 'Ready to Run Live AWS Scan'
               : 'No findings match your search or filter'}
           </h3>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-            {appMode === 'live' && liveScanStatus === 'idle'
-              ? 'Click "Trigger Live AWS Scan" above to inspect your AWS account for unattached EBS volumes and open security groups.'
+            {liveScanStatus === 'idle'
+              ? 'Click below to query AWS APIs in ' + accountConfig.region + ' for unattached EBS volumes and open security groups.'
               : 'Try clearing the search query or resetting the status and category filters.'}
           </p>
-          {appMode === 'live' && liveScanStatus === 'idle' ? (
+          {liveScanStatus === 'idle' ? (
             <button onClick={handleRunScan} className="btn btn-primary btn-sm">
               <RefreshCw size={13} />
               <span>Trigger Live AWS Scan</span>
@@ -544,7 +571,6 @@ export default function Discover() {
             const isBlocked = finding.status === 'blocked' || finding.isSafetyBlocked;
             const isCritical = finding.severity === 'critical';
             const isHigh = finding.severity === 'high';
-            const isLiveItem = finding.executionMode === 'live' || finding.dataSource === 'live_aws' || finding.id.startsWith('live-');
 
             return (
               <motion.div
@@ -561,15 +587,9 @@ export default function Discover() {
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    {isLiveItem ? (
-                      <span className="badge" style={{ background: 'rgba(0, 113, 227, 0.12)', color: 'var(--apple-blue)', fontWeight: 700, border: '1px solid rgba(0, 113, 227, 0.25)' }}>
-                        <Zap size={11} fill="currentColor" /> LIVE AWS TELEMETRY
-                      </span>
-                    ) : (
-                      <span className="badge" style={{ background: 'rgba(142, 142, 147, 0.12)', color: 'var(--text-secondary)', fontWeight: 600, border: '1px solid var(--border-medium)' }}>
-                        DEMO FIXTURE (Simulated)
-                      </span>
-                    )}
+                    <span className="badge" style={{ background: 'rgba(0, 113, 227, 0.12)', color: 'var(--apple-blue)', fontWeight: 700, border: '1px solid rgba(0, 113, 227, 0.25)' }}>
+                      <Zap size={11} fill="currentColor" /> LIVE AWS TELEMETRY
+                    </span>
                     {isResolved ? (
                       <span className="badge badge-success">
                         <CheckCircle2 size={12} /> RESOLVED ✓
@@ -610,7 +630,7 @@ export default function Discover() {
                 <div style={{ background: '#FAF9F8', padding: '12px 14px', borderRadius: 10, marginBottom: 16, border: '1px solid var(--border-subtle)' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Activity size={12} color="var(--apple-blue)" />
-                    {isLiveItem ? 'Live Verified Telemetry Evidence:' : 'Simulated Scenario Telemetry Evidence:'}
+                    Live Verified Telemetry Evidence:
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {(finding.evidence || []).slice(0, 2).map((ev, i) => (

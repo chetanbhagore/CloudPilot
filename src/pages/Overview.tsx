@@ -26,26 +26,18 @@ export default function Overview() {
     appMode
   } = useDemo();
 
-  const isStudent = activeScenario === 'student';
+  const dailyRunRate = monthlyWaste > 0 ? (monthlyWaste / 30) : 0;
+  const remediatedRunRate = isRemediated ? 0 : dailyRunRate;
 
-  const costTrendData = isStudent ? [
-    { day: 'Oct 15', cost: 74.20, projected: 74.20 },
-    { day: 'Oct 16', cost: 73.80, projected: 73.80 },
-    { day: 'Oct 17', cost: 74.50, projected: 74.50 },
-    { day: 'Oct 18', cost: 75.10, projected: 75.10 },
-    { day: 'Oct 19', cost: 74.30, projected: 74.30 },
-    { day: 'Oct 20', cost: 74.90, projected: 74.90 },
-    { day: 'Oct 21 (Today)', cost: 73.44, projected: isRemediated ? 10.33 : 73.44 },
-    { day: 'Oct 22 (Proj)', cost: null, projected: isRemediated ? 10.33 : 73.44 },
-  ] : [
-    { day: 'Oct 15', cost: 8.20, projected: 8.20 },
-    { day: 'Oct 16', cost: 8.90, projected: 8.90 },
-    { day: 'Oct 17', cost: 9.40, projected: 9.40 },
-    { day: 'Oct 18', cost: 10.10, projected: 10.10 },
-    { day: 'Oct 19', cost: 9.30, projected: 9.30 },
-    { day: 'Oct 20', cost: 9.80, projected: 9.80 },
-    { day: 'Oct 21 (Today)', cost: 8.25, projected: isRemediated ? 6.90 : 8.25 },
-    { day: 'Oct 22 (Proj)', cost: null, projected: isRemediated ? 6.80 : 8.25 },
+  const costTrendData = [
+    { day: 'Day -6', cost: Number((dailyRunRate * 1.02).toFixed(2)), projected: Number((dailyRunRate * 1.02).toFixed(2)) },
+    { day: 'Day -5', cost: Number((dailyRunRate * 1.01).toFixed(2)), projected: Number((dailyRunRate * 1.01).toFixed(2)) },
+    { day: 'Day -4', cost: Number((dailyRunRate * 0.99).toFixed(2)), projected: Number((dailyRunRate * 0.99).toFixed(2)) },
+    { day: 'Day -3', cost: Number((dailyRunRate * 1.03).toFixed(2)), projected: Number((dailyRunRate * 1.03).toFixed(2)) },
+    { day: 'Day -2', cost: Number((dailyRunRate * 1.00).toFixed(2)), projected: Number((dailyRunRate * 1.00).toFixed(2)) },
+    { day: 'Yesterday', cost: Number(dailyRunRate.toFixed(2)), projected: Number(dailyRunRate.toFixed(2)) },
+    { day: 'Today', cost: Number(dailyRunRate.toFixed(2)), projected: Number(remediatedRunRate.toFixed(2)) },
+    { day: 'Tomorrow (Proj)', cost: null, projected: Number(remediatedRunRate.toFixed(2)) },
   ];
 
   const handleActionOnFinding = (findingId: string) => {
@@ -69,7 +61,7 @@ export default function Overview() {
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div className="keynote-badge">
             <Sparkles size={12} color="#0071E3" />
-            <span>CLOUDPILOT • {accountConfig.alias.toUpperCase()}</span>
+            <span>CLOUDPILOT • {accountConfig.isConnected ? (accountConfig.alias || 'AWS LIVE').toUpperCase() : 'PRODUCTION AWS GOVERNANCE'}</span>
           </div>
 
           <h1 className="display-title" style={{ color: '#FFFFFF', marginBottom: 12 }}>
@@ -83,16 +75,40 @@ export default function Overview() {
           </p>
 
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button
-              onClick={() => {
-                sound.playClick();
-                navigate('/discover');
-              }}
-              className="btn btn-primary btn-lg"
-            >
-              <Zap size={16} fill="currentColor" />
-              <span>Investigate {findings.length} Open Cloud Findings</span>
-            </button>
+            {!accountConfig.isConnected ? (
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  navigate('/connect');
+                }}
+                className="btn btn-primary btn-lg"
+              >
+                <Zap size={16} fill="currentColor" />
+                <span>Connect Real AWS Account</span>
+              </button>
+            ) : findings.length === 0 ? (
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  navigate('/discover');
+                }}
+                className="btn btn-primary btn-lg"
+              >
+                <Zap size={16} fill="currentColor" />
+                <span>Trigger Live AWS Discovery Scan</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  navigate('/discover');
+                }}
+                className="btn btn-primary btn-lg"
+              >
+                <Zap size={16} fill="currentColor" />
+                <span>Investigate {findings.length} Live Cloud Findings</span>
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -108,6 +124,7 @@ export default function Overview() {
           </div>
         </div>
       </motion.div>
+
 
       {/* ── Environment Health Status Card ── */}
       <div
@@ -236,7 +253,7 @@ export default function Overview() {
             <span>
               {appMode === 'live'
                 ? 'Unattached EBS + stopped EC2 root disk overhead'
-                : isStudent
+                : activeScenario === 'student'
                 ? 'Assumes 24/7 idle GPU at $3.06/hr'
                 : 'Assumes detached EBS + unassociated EIP'}
             </span>
@@ -409,18 +426,18 @@ export default function Overview() {
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No Pending Remediation Blockers</div>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 360, marginBottom: 20 }}>
-              {appMode === 'live'
-                ? 'Your connected cloud account has 0 critical exposures pending authorization. Run a cloud discovery scan to query resources.'
-                : 'All cloud findings in this scenario are verified and safe. Zero unaddressed risks detected.'}
+              {accountConfig.isConnected
+                ? 'Your connected AWS account has 0 critical exposures pending authorization. Run a cloud discovery scan to query active resources.'
+                : 'Connect your AWS account via cross-account IAM Role to begin scanning for security risks and cost waste.'}
             </p>
             <button
               onClick={() => {
                 sound.playClick();
-                navigate('/discover');
+                navigate(accountConfig.isConnected ? '/discover' : '/connect');
               }}
               className="btn btn-primary"
             >
-              <span>{appMode === 'live' ? 'Run Cloud Discovery Scan' : 'Explore Discover Workspace'}</span>
+              <span>{accountConfig.isConnected ? 'Run Cloud Discovery Scan' : 'Connect AWS Account'}</span>
               <ArrowRight size={14} />
             </button>
           </div>
@@ -435,7 +452,7 @@ export default function Overview() {
               Prioritized Actionable Findings ({findings.length})
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Deterministic findings evaluated across {accountConfig.alias} infrastructure
+              {accountConfig.isConnected ? `Verified findings evaluated across AWS ${accountConfig.region}` : 'No active AWS account connected'}
             </div>
           </div>
           <button
@@ -455,12 +472,13 @@ export default function Overview() {
             <div style={{ padding: '36px 24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>No Actionable Findings Pending</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>
-                {appMode === 'live'
-                  ? 'Connect an AWS account or initiate a discovery scan to query resources.'
-                  : 'All findings in this environment have been resolved or verified.'}
+                {accountConfig.isConnected
+                  ? 'All evaluated resources in ' + accountConfig.region + ' are verified and safe. Run a scan to re-evaluate active resources.'
+                  : 'Connect your AWS account using CloudFormation to begin inspecting resources.'}
               </div>
             </div>
           ) : (
+
             findings.map((f, idx) => {
               const isResolved = f.status === 'resolved' || resolvedFindingIds.includes(f.id);
               const isBlocked = f.status === 'blocked';

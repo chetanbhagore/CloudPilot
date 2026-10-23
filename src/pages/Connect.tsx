@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Cloud, Copy, Shield,
-  ArrowRight, Check, Sparkles, Lock,
-  AlertTriangle, CheckCircle2, RefreshCw, Terminal, Info, Zap
+  Copy, Shield, ArrowRight, Check,
+  AlertTriangle, CheckCircle2, RefreshCw, Terminal, Zap
 } from 'lucide-react';
 import { useDemo } from '../context/useDemo';
-import { type ScenarioType } from '../context/contextDefinition';
 import { sound } from '../utils/soundEngine';
 
 const CF_READ_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudPilot Hardened Read-Only Discovery Role (Role 1 of 2)
+Description: CloudPilot Production Read-Only Discovery Role (Role 1 of 2)
 
 Parameters:
   ExternalId:
@@ -18,7 +16,7 @@ Parameters:
     MinLength: 16
     MaxLength: 128
     AllowedPattern: "^[a-zA-Z0-9_-]+$"
-    Description: Unique unpredictable customer tenant identifier for STS AssumeRole trust condition
+    Description: Unique customer tenant identifier for STS AssumeRole trust condition
 
 Resources:
   CloudPilotDiscoveryRole:
@@ -73,13 +71,11 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # AWS Describe APIs require Resource: "*" because AWS does not support resource-level ARNs for Describe
               - Sid: DescribeSecurityGroupsVerification
                 Effect: Allow
                 Action:
                   - ec2:DescribeSecurityGroups
                 Resource: "*"
-              # Atomic mutation strictly scoped to Security Groups in customer's own AWS account
               - Sid: ScopedRevokeSecurityGroupIngress
                 Effect: Allow
                 Action:
@@ -90,15 +86,12 @@ Resources:
 export default function Connect() {
   const navigate = useNavigate();
   const {
-    activeScenario,
-    setScenario,
     accountConfig,
     updateAccountConfig,
     connectAccount,
     isBackendOnline
   } = useDemo();
 
-  const [connectionMode, setConnectionMode] = useState<'preset' | 'custom'>('preset');
   const [activeTab, setActiveTab] = useState<'discovery' | 'remediation'>('discovery');
   const [copiedYaml, setCopiedYaml] = useState(false);
   const [copiedCli, setCopiedCli] = useState(false);
@@ -117,17 +110,10 @@ export default function Connect() {
 
   const copyCliCommand = () => {
     sound.playClick();
-    const cmd = 'aws cloudformation deploy --template-file cloudpilot-audit-role.yaml --stack-name CloudPilotAuditStack --capabilities CAPABILITY_NAMED_IAM --region ap-south-1';
+    const cmd = 'aws cloudformation deploy --template-file backend/cloudformation/cloudpilot-roles.yaml --stack-name CloudPilotAuditStack --capabilities CAPABILITY_NAMED_IAM';
     navigator.clipboard.writeText(cmd);
     setCopiedCli(true);
     setTimeout(() => setCopiedCli(false), 2000);
-  };
-
-  const handleSelectPreset = (type: ScenarioType) => {
-    sound.playClick();
-    setScenario(type);
-    setValidationError(null);
-    setValidationSuccessMsg(null);
   };
 
   const handleConnect = async () => {
@@ -135,17 +121,17 @@ export default function Connect() {
     setValidationError(null);
     setValidationSuccessMsg(null);
 
-    const result = await connectAccount(connectionMode === 'custom');
+    const result = await connectAccount(true);
     if (!result.success) {
       sound.playSnap();
       setValidationError(result.error || 'Connection failed validation.');
     } else {
       sound.playSuccess();
       setConnectionSuccess(true);
-      setValidationSuccessMsg(`Successfully validated STS assume role for acct-${accountConfig.accountId}.`);
+      setValidationSuccessMsg(`Successfully validated STS AssumeRole session for acct-${accountConfig.accountId}.`);
       setTimeout(() => {
         navigate('/discover');
-      }, 1600);
+      }, 1500);
     }
   };
 
@@ -169,285 +155,195 @@ export default function Connect() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Shield size={16} color="var(--apple-blue)" />
           <div style={{ fontSize: 13, color: 'var(--apple-blue)', fontWeight: 600 }}>
-            ENTERPRISE SECURITY ARCHITECTURE — ZERO STATIC CREDENTIAL INGESTION
+            REAL AWS STS INTEGRATION — ZERO LONG-LIVED CREDENTIAL INGESTION
           </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          CloudPilot operates exclusively via temporary STS AssumeRole tokens with external ID validation.
+          CloudPilot operates strictly via temporary AWS STS AssumeRole credentials with ExternalId validation.
         </div>
       </div>
 
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <span className="badge badge-info">TWO-ROLE IAM ONBOARDING</span>
-          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Zero Credential Ingestion</span>
+          <span className="badge badge-info">LIVE AWS ONBOARDING</span>
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Two-Role IAM Model</span>
         </div>
         <h1 className="display-title" style={{ marginBottom: 8 }}>
-          Connect Your AWS Environment
+          Connect Your AWS Account
         </h1>
         <p className="body-lead" style={{ maxWidth: 760 }}>
-          CloudPilot enforces an isolated <strong>Two-Role Security Model</strong>: Read-only telemetry discovery is strictly decoupled from human-authorized atomic remediations.
+          Connect your AWS account via cross-account IAM Role with STS AssumeRole. Read-only discovery telemetry is strictly isolated from human-approved atomic remediations.
         </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 24, marginBottom: 32 }}>
-        {/* Left Column: Preset Sandbox Environments or Custom Account Config */}
+        {/* Left Column: Real AWS Account Connection Form */}
         <div className="apple-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Sparkles size={18} color="var(--apple-blue)" />
-                <div className="section-title">AWS Account Configuration</div>
+                <Zap size={18} color="var(--apple-blue)" />
+                <div className="section-title">AWS STS Connection Credentials</div>
               </div>
 
-              {/* Mode Toggle */}
-              <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 3, borderRadius: 9999 }}>
-                <button
-                  onClick={() => {
-                    sound.playClick();
-                    setConnectionMode('preset');
-                    setValidationError(null);
-                  }}
-                  className={`nav-pill-btn ${connectionMode === 'preset' ? 'active' : ''}`}
-                  style={{ padding: '4px 12px', fontSize: 11.5, fontWeight: 600 }}
-                >
-                  Demo Scenarios
-                </button>
-                <button
-                  onClick={() => {
-                    sound.playClick();
-                    setConnectionMode('custom');
-                    setValidationError(null);
-                  }}
-                  className={`nav-pill-btn ${connectionMode === 'custom' ? 'active' : ''}`}
-                  style={{ padding: '4px 12px', fontSize: 11.5, fontWeight: 600 }}
-                >
-                  ⚡ Live AWS (STS)
-                </button>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 9999,
+                fontSize: 11.5,
+                fontWeight: 600,
+                background: isBackendOnline ? 'var(--apple-emerald-light)' : 'rgba(255, 59, 48, 0.1)',
+                color: isBackendOnline ? 'var(--apple-emerald-dark)' : 'var(--apple-red)'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+                <span>{isBackendOnline ? 'FastAPI Online' : 'FastAPI Offline'}</span>
               </div>
             </div>
 
-            {connectionMode === 'preset' ? (
-              <>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 18 }}>
-                  Select an evaluator sandbox cloud environment seeded with realistic cost leaks and security vulnerabilities:
-                </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Deploy the CloudFormation template on your target AWS account, then enter your account ID and role name below. CloudPilot will perform a live STS AssumeRole handshake:
+              </p>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-                  {/* Option 1: Fintech MVP */}
-                  <div
-                    onClick={() => handleSelectPreset('fintech')}
-                    style={{
-                      padding: 16,
-                      borderRadius: 14,
-                      border: `2px solid ${activeScenario === 'fintech' ? 'var(--apple-blue)' : 'var(--border-subtle)'}`,
-                      background: activeScenario === 'fintech' ? 'rgba(0, 113, 227, 0.04)' : '#FFFFFF',
-                      cursor: 'pointer',
-                      transition: 'all 160ms ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
-                        Early-Stage FinTech Startup (MVP)
-                      </div>
-                      <span className="badge badge-critical">1 Critical Vuln</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Simulates a 47-resource stack: 1 exposed SSH port 22 to 0.0.0.0/0, unattached gp3 EBS volume, and unassociated Elastic IP.
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10, fontSize: 11.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                      <span>acct-123456789012</span>
-                      <span>•</span>
-                      <span>ap-south-1 (Mumbai)</span>
-                    </div>
-                  </div>
-
-                  {/* Option 2: Student ML Project */}
-                  <div
-                    onClick={() => handleSelectPreset('student')}
-                    style={{
-                      padding: 16,
-                      borderRadius: 14,
-                      border: `2px solid ${activeScenario === 'student' ? 'var(--apple-blue)' : 'var(--border-subtle)'}`,
-                      background: activeScenario === 'student' ? 'rgba(0, 113, 227, 0.04)' : '#FFFFFF',
-                      cursor: 'pointer',
-                      transition: 'all 160ms ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
-                        Student ML Research Sandbox
-                      </div>
-                      <span className="badge badge-high">High Cost Leak</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Simulates an idle NVIDIA V100 GPU instance (p3.2xlarge, $2,203/mo run-rate), open Jupyter port 8888, and over-provisioned io2 EBS.
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10, fontSize: 11.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                      <span>acct-987654321098</span>
-                      <span>•</span>
-                      <span>us-east-1 (N. Virginia)</span>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
-                <div style={{
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  background: isBackendOnline ? 'rgba(48, 209, 88, 0.08)' : 'rgba(0, 113, 227, 0.06)',
-                  border: `1px solid ${isBackendOnline ? 'rgba(48, 209, 88, 0.25)' : 'rgba(0, 113, 227, 0.2)'}`,
-                  fontSize: 12,
-                  color: isBackendOnline ? 'var(--apple-emerald-dark)' : 'var(--apple-blue)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}>
-                  <div style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: '50%',
-                    background: isBackendOnline ? 'var(--apple-emerald)' : 'var(--apple-blue)'
-                  }} />
-                  <span>
-                    {isBackendOnline
-                      ? 'FastAPI Backend Online — Ready for live boto3 STS AssumeRole validation'
-                      : 'Dual-Mode Engine Ready — Real STS parameters verified with fallback resilience'}
-                  </span>
-                </div>
-
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Enter your target AWS account details. CloudPilot assumes the scoped read-only role with cryptographic ExternalId verification:
-                </p>
-
-                {/* Account ID input */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Target AWS Account ID (12 digits)
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={12}
-                    value={accountConfig.accountId}
-                    onChange={(e) => updateAccountConfig({ accountId: e.target.value.replace(/\D/g, '') })}
-                    placeholder="123456789012"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid var(--border-medium)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 13
-                    }}
-                  />
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
-                    12-digit AWS account identifier
-                  </div>
-                </div>
-
-                {/* Role Name input */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Role Name to Assume (Discovery)
-                  </label>
-                  <input
-                    type="text"
-                    value={accountConfig.roleName}
-                    onChange={(e) => updateAccountConfig({ roleName: e.target.value })}
-                    placeholder="CloudPilotAuditRole"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid var(--border-medium)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 13
-                    }}
-                  />
-                </div>
-
-                {/* External ID with copy button */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      STS ExternalId (Confused Deputy Defense)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sound.playClick();
-                        navigator.clipboard.writeText(accountConfig.externalId || 'cp-tenant-9042-demo');
-                        setCopiedExtId(true);
-                        setTimeout(() => setCopiedExtId(false), 2000);
-                      }}
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '2px 8px', fontSize: 11 }}
-                    >
-                      {copiedExtId ? <Check size={11} color="var(--apple-emerald)" /> : <Copy size={11} />}
-                      {copiedExtId ? 'Copied' : 'Copy ExternalId'}
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={accountConfig.externalId || 'cp-tenant-9042-demo'}
-                    onChange={(e) => updateAccountConfig({ externalId: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid var(--border-medium)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 12.5,
-                      background: '#FAF9F8'
-                    }}
-                  />
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
-                    Mandatory trust condition in CloudPilotAuditRole policy to prevent cross-tenant impersonation.
-                  </div>
-                </div>
-
-                {/* Region selector */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Primary AWS Region
-                  </label>
-                  <select
-                    value={accountConfig.region}
-                    onChange={(e) => updateAccountConfig({ region: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid var(--border-medium)',
-                      fontSize: 13,
-                      background: '#FFFFFF'
-                    }}
-                  >
-                    <option value="ap-south-1">ap-south-1 (Asia Pacific - Mumbai)</option>
-                    <option value="us-east-1">us-east-1 (US East - N. Virginia)</option>
-                    <option value="eu-west-1">eu-west-1 (Europe - Ireland)</option>
-                    <option value="us-west-2">us-west-2 (US West - Oregon)</option>
-                  </select>
+              {/* Account ID input */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  AWS Account ID (12 digits) *
+                </label>
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={accountConfig.accountId}
+                  onChange={(e) => updateAccountConfig({ accountId: e.target.value.replace(/\D/g, '') })}
+                  placeholder="e.g. 123456789012"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  Your 12-digit AWS account number found in the AWS Management Console
                 </div>
               </div>
-            )}
+
+              {/* Role Name input */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  IAM Role Name to Assume (Discovery) *
+                </label>
+                <input
+                  type="text"
+                  value={accountConfig.roleName}
+                  onChange={(e) => updateAccountConfig({ roleName: e.target.value })}
+                  placeholder="CloudPilotAuditRole"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  Role configured in your AWS IAM with SecurityAudit and ViewOnlyAccess
+                </div>
+              </div>
+
+              {/* External ID with copy button */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    STS ExternalId (Confused Deputy Defense) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playClick();
+                      navigator.clipboard.writeText(accountConfig.externalId || 'cp-tenant-live');
+                      setCopiedExtId(true);
+                      setTimeout(() => setCopiedExtId(false), 2000);
+                    }}
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                  >
+                    {copiedExtId ? <Check size={11} color="var(--apple-emerald)" /> : <Copy size={11} />}
+                    {copiedExtId ? 'Copied' : 'Copy ExternalId'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={accountConfig.externalId || ''}
+                  onChange={(e) => updateAccountConfig({ externalId: e.target.value })}
+                  placeholder="cp-tenant-..."
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12.5,
+                    background: '#FAF9F8'
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  Required condition parameter in trust policy to prevent cross-tenant confused deputy attacks.
+                </div>
+              </div>
+
+              {/* Region selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Primary AWS Region
+                </label>
+                <select
+                  value={accountConfig.region}
+                  onChange={(e) => updateAccountConfig({ region: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    fontSize: 13,
+                    background: '#FFFFFF'
+                  }}
+                >
+                  <option value="us-east-1">us-east-1 (US East - N. Virginia)</option>
+                  <option value="ap-south-1">ap-south-1 (Asia Pacific - Mumbai)</option>
+                  <option value="us-west-2">us-west-2 (US West - Oregon)</option>
+                  <option value="eu-west-1">eu-west-1 (Europe - Ireland)</option>
+                  <option value="eu-central-1">eu-central-1 (Europe - Frankfurt)</option>
+                  <option value="ap-southeast-1">ap-southeast-1 (Asia Pacific - Singapore)</option>
+                </select>
+              </div>
+            </div>
 
             {/* Validation Feedback */}
             {validationError && (
-              <div style={{ padding: '10px 14px', background: 'var(--apple-crimson-light)', border: '1px solid rgba(255, 59, 48, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <AlertTriangle size={16} color="var(--apple-crimson)" />
-                <div style={{ fontSize: 12.5, color: 'var(--apple-crimson-dark)', fontWeight: 500 }}>
-                  {validationError}
+              <div style={{ padding: '12px 14px', background: 'var(--apple-crimson-light)', border: '1px solid rgba(255, 59, 48, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+                <AlertTriangle size={18} color="var(--apple-crimson)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontSize: 13, color: 'var(--apple-crimson-dark)', fontWeight: 600, marginBottom: 2 }}>
+                    AWS STS Connection Failed
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                    {validationError}
+                  </div>
                 </div>
               </div>
             )}
 
             {validationSuccessMsg && (
-              <div style={{ padding: '10px 14px', background: 'var(--apple-emerald-light)', border: '1px solid rgba(48, 209, 88, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <CheckCircle2 size={16} color="var(--apple-emerald-dark)" />
-                <div style={{ fontSize: 12.5, color: 'var(--apple-emerald-dark)', fontWeight: 500 }}>
+              <div style={{ padding: '12px 14px', background: 'var(--apple-emerald-light)', border: '1px solid rgba(48, 209, 88, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <CheckCircle2 size={18} color="var(--apple-emerald-dark)" />
+                <div style={{ fontSize: 12.5, color: 'var(--apple-emerald-dark)', fontWeight: 600 }}>
                   {validationSuccessMsg}
                 </div>
               </div>
@@ -456,44 +352,36 @@ export default function Connect() {
 
           <button
             onClick={handleConnect}
-            disabled={accountConfig.isConnecting || connectionSuccess}
+            disabled={accountConfig.isConnecting || connectionSuccess || !accountConfig.accountId || !isBackendOnline}
             className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
+            style={{ width: '100%', marginTop: 8 }}
           >
             {accountConfig.isConnecting ? (
               <>
                 <RefreshCw size={16} className="spin" />
-                <span>
-                  {connectionMode === 'custom'
-                    ? 'Validating STS AssumeRole with ExternalId…'
-                    : 'Connecting Sandbox Scenario…'}
-                </span>
+                <span>Performing AWS STS AssumeRole Handshake…</span>
               </>
             ) : connectionSuccess ? (
               <>
                 <CheckCircle2 size={16} />
-                <span>Handshake Successful! Launching Discovery…</span>
+                <span>STS Handshake Verified! Launching Live Scan…</span>
               </>
             ) : (
               <>
-                {connectionMode === 'custom' ? <Zap size={16} /> : <Cloud size={16} />}
-                <span>
-                  {connectionMode === 'custom'
-                    ? 'Test & Validate Live STS Handshake'
-                    : 'Connect Demo Sandbox Account'}
-                </span>
+                <Zap size={16} />
+                <span>Verify & Connect Real AWS Account</span>
                 <ArrowRight size={16} />
               </>
             )}
           </button>
         </div>
 
-        {/* Right Column: Two-Role IAM Architecture & Illustrative CloudFormation */}
+        {/* Right Column: Two-Role IAM CloudFormation Stack */}
         <div className="apple-card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div>
-              <div className="section-title">Illustrative CloudFormation Specs</div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Labeled illustrative for prototype evaluation</div>
+              <div className="section-title">Production IAM CloudFormation Templates</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Deploy to your AWS account before connecting</div>
             </div>
             <button onClick={copyTemplate} className="btn btn-secondary btn-sm" style={{ gap: 6 }}>
               {copiedYaml ? <Check size={12} color="var(--apple-emerald)" /> : <Copy size={12} />}
@@ -535,36 +423,24 @@ export default function Connect() {
           <div style={{ background: '#FAF9F8', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border-subtle)', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Terminal size={12} /> Copyable Setup Command
+                <Terminal size={12} /> AWS CLI One-Line Deploy Command
               </div>
               <button onClick={copyCliCommand} className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: 11 }}>
                 {copiedCli ? 'Copied' : 'Copy Command'}
               </button>
             </div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-primary)', wordBreak: 'break-all' }}>
-              aws cloudformation deploy --template-file cloudpilot-audit-role.yaml --stack-name CloudPilotAuditStack --capabilities CAPABILITY_NAMED_IAM
+              aws cloudformation deploy --template-file backend/cloudformation/cloudpilot-roles.yaml --stack-name CloudPilotAuditStack --capabilities CAPABILITY_NAMED_IAM
             </div>
           </div>
 
           {/* Architectural Explanation */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}>
-              <CheckCircle2 size={15} color="var(--apple-emerald-dark)" style={{ flexShrink: 0, marginTop: 2 }} />
-              <span style={{ color: 'var(--text-secondary)' }}>
-                <strong>Role 1 (Discovery):</strong> Attached strictly to managed AWS `SecurityAudit` and `ViewOnlyAccess`. Physically impossible to modify infrastructure during background scans.
-              </span>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              <strong>Zero Long-Lived Secrets:</strong> CloudPilot never requests or stores AWS Access Keys. Communication is established exclusively using AWS STS AssumeRole temporary credentials.
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}>
-              <Lock size={15} color="var(--apple-blue)" style={{ flexShrink: 0, marginTop: 2 }} />
-              <span style={{ color: 'var(--text-secondary)' }}>
-                <strong>Role 2 (Remediation):</strong> Separate role assumed only when human explicitly authorizes an action in the UI. Restricted to atomic API operations.
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 4 }}>
-              <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>
-                Note: In production environments, tenant isolation requires multi-tenant cryptographic session tokens, VPC endpoint boundaries, and IAM Service Control Policies (SCPs) in addition to STS ExternalId.
-              </span>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              <strong>ExternalId Protection:</strong> The trust policy requires matching your tenant ExternalId, eliminating the confused-deputy vulnerability.
             </div>
           </div>
         </div>

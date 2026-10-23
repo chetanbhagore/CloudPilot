@@ -160,7 +160,7 @@ def _init_seed_users():
     ]
     for u in seed_users:
         h, salt = hash_password(u["password"])
-        USERS_DB[u["email"].lower()] = {
+        user_record = {
             "id": u["id"],
             "email": u["email"].lower(),
             "name": u["name"],
@@ -170,8 +170,70 @@ def _init_seed_users():
             "salt": salt,
             "is_active": True
         }
+        USERS_DB[u["email"].lower()] = user_record
+        try:
+            from app.db.database import UserRepository
+            UserRepository.create_user(user_record)
+        except Exception:
+            pass
 
 _init_seed_users()
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    em = email.lower().strip()
+    user = USERS_DB.get(em)
+    if user:
+        return user
+    try:
+        from app.db.database import UserRepository
+        db_user = UserRepository.get_by_email(em)
+        if db_user:
+            USERS_DB[em] = db_user
+            return db_user
+    except Exception as e:
+        logger.warning(f"[Auth] Error checking DB for user {em}: {e}")
+    return None
+
+def register_user(name: str, email: str, password: str, org_name: str) -> Tuple[Dict[str, Any], str, int]:
+    """
+    Registers a new tenant organization and primary Owner user into durable persistence.
+    Issues a tamper-evident bearer token upon registration.
+    """
+    em = email.lower().strip()
+    if get_user_by_email(em):
+        raise ValueError(f"User with email '{em}' is already registered.")
+
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+
+    import secrets
+    import re
+    from app.db.database import OrganizationRepository, UserRepository
+
+    org_slug = re.sub(r"[^a-z0-9]", "", org_name.lower())[:16] or "org"
+    org_id = f"org-{org_slug}-{secrets.token_hex(4)}"
+    user_id = f"usr-{secrets.token_hex(6)}"
+
+    OrganizationRepository.create_organization(org_id, org_name, plan="Startup Pro")
+    ORGANIZATIONS[org_id] = org_name
+
+    pwd_hash, salt = hash_password(password)
+    user_data = {
+        "id": user_id,
+        "email": em,
+        "name": name.strip(),
+        "role": "Owner",
+        "org_id": org_id,
+        "password_hash": pwd_hash,
+        "salt": salt,
+        "is_active": True
+    }
+    UserRepository.create_user(user_data)
+    USERS_DB[em] = user_data
+
+    token, expires_in = create_access_token(user_data)
+    logger.info(f"[Auth] Registered new customer {em} (Org: {org_id}, Name: {name})")
+    return user_data, token, expires_in
 
 # ── Rate Limiting Store ────────────────────────────────────────────────────────
 # key -> List[timestamps]

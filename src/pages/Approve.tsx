@@ -25,6 +25,11 @@ export default function Approve() {
     appMode
   } = useDemo();
 
+  const [phase, setPhase] = useState<Phase>('review');
+  const [confirmedFriction, setConfirmedFriction] = useState(false);
+  const [executionStep, setExecutionStep] = useState(0);
+  const [remediationError, setRemediationError] = useState<string | null>(null);
+
   const currentFinding = getActiveFinding();
 
   if (!currentFinding || !currentFinding.id || !currentFinding.resource) {
@@ -58,11 +63,6 @@ export default function Approve() {
   const isBlocked = currentFinding.status === 'blocked' || currentFinding.isSafetyBlocked;
   const canApprove = user.role !== 'Viewer' && (!user.permissions || user.permissions.includes('approve:remediation'));
 
-  const [phase, setPhase] = useState<Phase>('review');
-  const [confirmedFriction, setConfirmedFriction] = useState(false);
-  const [executionStep, setExecutionStep] = useState(0);
-  const [remediationError, setRemediationError] = useState<string | null>(null);
-
   const effectivePhase: Phase = isAlreadyResolved ? 'verified' : phase;
 
   // 6 Believable Execution Stages
@@ -81,22 +81,40 @@ export default function Approve() {
     setExecutionStep(0);
     setRemediationError(null);
 
+    // Live Mode: Direct execution against real AWS with immediate failure handling and no artificial delays
+    if (appMode === 'live') {
+      try {
+        setExecutionStep(3); // Dispatching atomic AWS API call
+        await approveRemediation(currentFinding.id);
+        setExecutionStep(6);
+        sound.playSuccess();
+        setPhase('verified');
+      } catch (err: unknown) {
+        sound.playWarning();
+        const msg = err instanceof Error ? err.message : String(err);
+        setRemediationError(msg);
+        setPhase('failed');
+      }
+      return;
+    }
+
+    // Demo Mode: Step-by-step educational simulation
     try {
       setExecutionStep(1);
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 200));
       setExecutionStep(2);
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 200));
       setExecutionStep(3);
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 200));
       setExecutionStep(4);
 
-      // Trigger real execution & independent verification via DemoContext -> Backend API
+      // Trigger demo execution & fixture update
       await approveRemediation(currentFinding.id);
 
       setExecutionStep(5);
-      await new Promise((r) => setTimeout(r, 250));
-      setExecutionStep(6);
       await new Promise((r) => setTimeout(r, 200));
+      setExecutionStep(6);
+      await new Promise((r) => setTimeout(r, 150));
 
       sound.playSuccess();
       setPhase('verified');

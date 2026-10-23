@@ -15,7 +15,8 @@ export default function PassportPage() {
     setSelectedFindingId,
     resolvedFindingIds,
     accountConfig,
-    auditRecords
+    auditRecords,
+    appMode
   } = useDemo();
 
   const currentFinding = getActiveFinding();
@@ -53,11 +54,15 @@ export default function PassportPage() {
   // Find matching audit record if resolved
   const matchingAudit = auditRecords.find((a) => a.findingId === currentFinding.id);
 
+  // Dynamically compute valid lifetime from finding metadata
+  const detectedTime = currentFinding.detectedAt ? new Date(currentFinding.detectedAt).getTime() : 1774320000000;
+  const dynamicExpiresAt = (currentFinding as any).passport?.expires_at || new Date(detectedTime + 3600000).toISOString();
+
   // Construct dynamic Safety Passport directly from the rich finding model
   const dynamicPassport: SafetyPassport = {
     findingId: currentFinding.id,
-    generatedAt: currentFinding.detectedAt,
-    expiresAt: '2026-10-21T18:00:00Z',
+    generatedAt: currentFinding.detectedAt || '2026-10-23T00:00:00Z',
+    expiresAt: dynamicExpiresAt,
     findingEvidence: currentFinding.evidence,
     resourceIdentity: {
       id: currentFinding.resource.id,
@@ -80,12 +85,14 @@ export default function PassportPage() {
     executionResult: isResolved
       ? {
           status: 'success',
-          awsRequestId: matchingAudit?.awsResponse.split('RequestId: ')[1] || 'req-aws-simulated-ok',
+          awsRequestId: matchingAudit?.awsResponse?.includes('RequestId: ')
+            ? matchingAudit.awsResponse.split('RequestId: ')[1]
+            : (appMode === 'demo' ? 'demo-simulated-req-001' : 'none'),
           attemptedAt: matchingAudit?.authorizedAt || currentFinding.detectedAt,
-          verifiedAt: matchingAudit?.executedAt || '2026-10-21T15:04:38Z',
+          verifiedAt: matchingAudit?.executedAt || matchingAudit?.authorizedAt || currentFinding.detectedAt,
           beforeState: currentFinding.beforeState,
           afterState: currentFinding.afterState,
-          auditId: matchingAudit?.id || 'audit-simulated'
+          auditId: matchingAudit?.id || 'audit-pending'
         }
       : undefined
   };

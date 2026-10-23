@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   User, Users, Shield, Cloud, CreditCard,
-  CheckCircle2, Plus, Check
+  CheckCircle2, Plus, Check, Zap
 } from 'lucide-react';
 import { useAuth, type TeamMember } from '../context/useAuth';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
 
 export default function Settings() {
+  const navigate = useNavigate();
   const { user, teamMembers, updateUser, inviteTeamMember } = useAuth();
+  const { accountConfig, disconnectAccount } = useDemo();
   const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'aws' | 'billing'>('profile');
+
 
   // Form states
   const [name, setName] = useState(user.name);
@@ -392,53 +397,83 @@ export default function Settings() {
       {activeTab === 'aws' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div className="card" style={{ padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Connected AWS Accounts (2 Active)</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
-              CloudPilot establishes least-privilege access using our Two-Role IAM architecture via CloudFormation stacks.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {/* Account 1 */}
-              <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border-medium)', background: 'var(--surface-secondary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>Production Core (FinTech MVP)</span>
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'var(--apple-emerald-light)', color: 'var(--apple-emerald-dark)', fontWeight: 700 }}>
-                    HEALTHY
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  AWS Account: 8392-1049-2819
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Region: <strong>ap-south-1 (Mumbai)</strong>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10 }}>
-                  Read-Only Role: <code>arn:aws:iam::839210492819:role/CloudPilotReadOnly</code>
-                </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
+                  Connected AWS Accounts ({accountConfig.isConnected ? '1 Active' : '0 Connected'})
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  CloudPilot establishes least-privilege access using our Two-Role IAM architecture via CloudFormation stacks.
+                </p>
               </div>
-
-              {/* Account 2 */}
-              <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border-medium)', background: 'var(--surface-secondary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>Research & ML Lab Sandbox</span>
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'var(--apple-emerald-light)', color: 'var(--apple-emerald-dark)', fontWeight: 700 }}>
-                    HEALTHY
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  AWS Account: 9182-4729-1039
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Region: <strong>us-east-1 (N. Virginia)</strong>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10 }}>
-                  Read-Only Role: <code>arn:aws:iam::918247291039:role/CloudPilotReadOnly</code>
-                </div>
-              </div>
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  navigate('/connect');
+                }}
+                className="btn btn-primary btn-sm"
+              >
+                <Plus size={14} />
+                <span>Connect AWS Account</span>
+              </button>
             </div>
+
+            {accountConfig.isConnected ? (
+              <div style={{ padding: 18, borderRadius: 12, border: '1px solid var(--border-medium)', background: 'var(--surface-secondary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{accountConfig.alias || `AWS Account ${accountConfig.accountId}`}</span>
+                  </div>
+                  <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 9999, background: 'var(--apple-emerald-light)', color: 'var(--apple-emerald-dark)', fontWeight: 700 }}>
+                    STS CONNECTED
+                  </span>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                  AWS Account ID: {accountConfig.accountId}
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Target Region: <strong>{accountConfig.region}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 10 }}>
+                  Assumed Role: <code>arn:aws:iam::{accountConfig.accountId}:role/{accountConfig.roleName}</code>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                  <button
+                    onClick={() => {
+                      sound.playSnap();
+                      disconnectAccount();
+                    }}
+                    className="btn btn-secondary btn-sm"
+                    style={{ color: 'var(--apple-red)' }}
+                  >
+                    Disconnect Account
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: 36, textAlign: 'center', borderRadius: 12, border: '1px dashed var(--border-medium)', background: '#FAF9F8' }}>
+                <Zap size={28} color="var(--text-tertiary)" style={{ margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>No AWS Accounts Connected Yet</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto 16px' }}>
+                  Deploy our CloudFormation template to create the CloudPilotAuditRole, then connect your account using STS AssumeRole.
+                </div>
+                <button
+                  onClick={() => {
+                    sound.playClick();
+                    navigate('/connect');
+                  }}
+                  className="btn btn-primary btn-sm"
+                >
+                  <Plus size={13} />
+                  <span>Connect Real AWS Account</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+
 
       {/* TAB 4: Plan & Billing */}
       {activeTab === 'billing' && (

@@ -54,40 +54,7 @@ export default function AuditTrail() {
   }, [appMode, backendUrl]);
 
   const displayRecords = useMemo(() => {
-    const isLive = appMode === 'live';
-    let list: AuditRecord[] = [];
-
-    if (isLive) {
-      // In live mode, display only real verified records from server or local session
-      list = liveAuditEvents.length > 0
-        ? liveAuditEvents
-        : auditRecords.filter((r) => r.findingId.startsWith('live-') || r.scenario.includes('Live'));
-      // No synthetic live mock records! If empty, remains empty.
-    } else {
-      // In demo mode, use demo fixtures if no session records exist
-      list = auditRecords.length > 0 ? auditRecords : [
-        {
-          id: 'audit-rec-0914',
-          findingId: 'finding-001',
-          scenario: activeScenario === 'student' ? 'Research & ML Lab Sandbox' : 'Production Core (FinTech)',
-          action: activeScenario === 'student'
-            ? 'ec2:StopInstances — Stop idle GPU instance i-0gpu998877'
-            : 'ec2:RevokeSecurityGroupIngress — TCP:22 from 0.0.0.0/0',
-          resource: activeScenario === 'student'
-            ? 'i-0gpu998877 (pytorch-research-vm, us-east-1)'
-            : 'sg-0a1b2c3d4e5f (launch-wizard-1, ap-south-1)',
-          authorizedBy: user.email,
-          authorizedAt: '2026-10-21T15:04:32Z',
-          executedAt: '2026-10-21T15:04:35Z',
-          awsResponse: '200 OK — RequestId: req-aws-simulated-audit-ok',
-          outcome: 'success' as const,
-          beforeState: activeScenario === 'student' ? 'i-0gpu998877 state: RUNNING ($3.06/hr)' : 'TCP:22 from 0.0.0.0/0: PRESENT',
-          afterState: activeScenario === 'student' ? 'i-0gpu998877 state: STOPPED ($0.00/hr ✓)' : 'TCP:22 from 0.0.0.0/0: REMOVED (verified ✓)',
-          canonicalPayload: `finding-001|sg-0a1b2c3d4e5f|2026-10-21T15:04:32Z|req-aws-simulated-audit-ok|${user.email}`,
-          integrityHash: activeHash
-        }
-      ];
-    }
+    const list: AuditRecord[] = liveAuditEvents.length > 0 ? liveAuditEvents : auditRecords;
 
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
@@ -98,7 +65,8 @@ export default function AuditTrail() {
       r.resource.toLowerCase().includes(q) ||
       r.scenario.toLowerCase().includes(q)
     );
-  }, [auditRecords, liveAuditEvents, activeScenario, activeHash, searchQuery, user.email, appMode]);
+  }, [auditRecords, liveAuditEvents, searchQuery]);
+
 
   const handleExport = () => {
     sound.playSuccess();
@@ -140,6 +108,11 @@ export default function AuditTrail() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span className="badge badge-info">STAGE 5 OF 5</span>
+            {appMode === 'demo' && (
+              <span className="badge" style={{ background: 'rgba(255, 159, 10, 0.15)', color: 'var(--apple-amber-dark)', fontWeight: 700 }}>
+                DEMO SIMULATION ({activeScenario.toUpperCase()})
+              </span>
+            )}
             <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Cryptographic Audit Ledger</span>
           </div>
           <h1 className="display-title" style={{ marginBottom: 6 }}>
@@ -477,7 +450,7 @@ export default function AuditTrail() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
                     <span style={{ color: 'var(--text-tertiary)' }}>Environment:</span><br />
-                    <strong>{appMode === 'live' ? 'AWS Live (STS AssumeRole)' : activeScenario === 'student' ? 'Research & ML Lab' : 'Production Core (FinTech)'}</strong>
+                    <strong>AWS Live (STS AssumeRole)</strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-tertiary)' }}>Signer:</span><br />

@@ -21,9 +21,9 @@ from app.services.safety_passport import (
     build_safety_passport,
     revalidate_safety_passport_before_execution
 )
-from app.services.auth import require_permission, enforce_tenant_isolation
+from app.services.auth import require_permission, enforce_tenant_isolation, get_current_user
 from app.routers.accounts import _connected_accounts
-from app.db.database import FindingRepository, AuditRepository
+from app.db.database import FindingRepository, AuditRepository, AccountRepository
 
 logger = logging.getLogger("cloudpilot.discovery_router")
 router = APIRouter(tags=["Discovery & Remediation"])
@@ -46,20 +46,22 @@ def run_discovery_scan(
     FAILS CLOSED: Returns zero findings if none exist; never fabricates findings or resource counts.
     """
     user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    org_id = user.organization_id if user and not user.is_demo else (request.organization_id or "org-acme-prod")
     if request.mode != "demo" and user and not user.is_demo:
-        req_org = request.organization_id or "org-acme-prod"
+        req_org = request.organization_id or org_id
         enforce_tenant_isolation(req_org, user)
 
     sanitized_id = request.account_id.replace("-", "").strip()
 
     # ── Demo Mode Execution ──
     if request.mode == "demo":
-        logger.info(f"[Discovery] Generating simulated demo findings for {sanitized_id} in {request.region}")
+        logger.info(f"[Discovery] Generating simulated demo findings for {sanitized_id} in {request.region} (Tenant: {org_id})")
         demo_findings = get_demo_scenario_findings("fintech", sanitized_id, request.region)
         for f in demo_findings:
             _cached_findings[f"demo:{f.id}"] = f
+            _cached_findings[f"{org_id}:{f.id}"] = f
             try:
-                FindingRepository.save_finding("org-acme-prod", f.model_dump())
+                FindingRepository.save_finding(org_id, f.model_dump())
             except Exception as e:
                 logger.warning(f"[DB] Non-fatal save error: {e}")
         return DiscoveryResponse(
@@ -77,18 +79,23 @@ def run_discovery_scan(
         )
 
     # ── Concurrency Protection ──
-    lock_key = f"live:{sanitized_id}"
-    if lock_key in _active_scans:
+    lock_key = f"{org_id}:live:{sanitized_id}"
+    if lock_key in _active_scans or f"live:{sanitized_id}" in _active_scans:
         raise HTTPException(
             status_code=409,
             detail=f"A discovery scan is already active for account {sanitized_id}. Please wait for it to complete."
         )
 
-    account_info = _connected_accounts.get(lock_key)
+    # Lookup connected account for this tenant in DB or cache
+    account_info = _connected_accounts.get(f"{org_id}:{sanitized_id}") or _connected_accounts.get(f"live:{sanitized_id}")
+    if not account_info:
+        db_accounts = AccountRepository.get_accounts(org_id, mode="live")
+        account_info = next((a for a in db_accounts if a["account_id"].replace("-", "") == sanitized_id), None)
+
     if not account_info:
         raise HTTPException(
             status_code=400,
-            detail=f"Account {sanitized_id} is not connected in live mode. Perform STS connection via /accounts/connect first."
+            detail=f"Account {sanitized_id} is not connected in live mode for tenant '{org_id}'. Perform STS connection via /accounts/connect first."
         )
 
     role_arn = account_info["role_arn"]
@@ -117,6 +124,7 @@ def run_discovery_scan(
         # Store discovered findings in cache
         for f in discovered_findings:
             _cached_findings[f"live:{f.id}"] = f
+            _cached_findings[f"{org_id}:{f.id}"] = f
 
         # Determine overall scan status
         if len(failed_regions) > 0 and len(successful_regions) > 0:
@@ -133,10 +141,8 @@ def run_discovery_scan(
             error_msg = None
 
         for f in discovered_findings:
-            _cached_findings[f"live:{f.id}"] = f
             try:
-                req_org = request.organization_id or "org-acme-prod"
-                FindingRepository.save_finding(req_org, f.model_dump())
+                FindingRepository.save_finding(org_id, f.model_dump())
             except Exception as e:
                 logger.warning(f"[DB] Non-fatal save error: {e}")
 
@@ -167,26 +173,43 @@ def run_discovery_scan(
 @router.get("/findings", response_model=List[FindingModel])
 def get_findings(
     category: Optional[str] = Query(None, description="Filter by category ('cost' or 'security')"),
-    mode: str = Query("live", description="Execution mode ('live' or 'demo')")
+    mode: str = Query("live", description="Execution mode ('live' or 'demo')"),
+    current_user: Optional[AuthenticatedUser] = Depends(get_current_user)
 ):
     """
-    Returns discovered findings partitioned by mode.
-    FAILS CLOSED: Live mode returns only verified live findings. If cache is empty, returns empty list [].
+    Returns discovered findings partitioned by mode and strictly scoped to current tenant.
+    FAILS CLOSED: Live mode returns only verified live findings. If database is empty, returns empty list [].
     Never auto-seeds live mode with demo data.
     """
+    user = current_user if isinstance(current_user, AuthenticatedUser) else None
+    org_id = user.organization_id if user and not user.is_demo else "org-acme-prod"
     mode_str = mode if isinstance(mode, str) else "live"
-    prefix = f"{mode_str}:"
-    matching = [
-        f for k, f in _cached_findings.items()
-        if k.startswith(prefix) and f.execution_mode == mode_str
-    ]
 
-    # In demo mode only, seed if empty
-    if mode_str == "demo" and not matching:
-        seeds = get_demo_scenario_findings("fintech", "123456789012", "ap-south-1")
-        for s in seeds:
-            _cached_findings[f"demo:{s.id}"] = s
-        matching = seeds
+    if mode_str == "demo":
+        matching = [
+            f for k, f in _cached_findings.items()
+            if (k.startswith("demo:") or k.startswith(f"{org_id}:")) and f.execution_mode == "demo"
+        ]
+        if not matching:
+            seeds = get_demo_scenario_findings("fintech", "123456789012", "ap-south-1")
+            for s in seeds:
+                _cached_findings[f"demo:{s.id}"] = s
+                _cached_findings[f"{org_id}:{s.id}"] = s
+            matching = seeds
+    else:
+        # Load from durable database scoped strictly to this tenant organization
+        db_findings = FindingRepository.list_findings(org_id, mode="live")
+        matching = []
+        for d in db_findings:
+            try:
+                matching.append(FindingModel(**d))
+            except Exception:
+                pass
+        if not matching:
+            matching = [
+                f for k, f in _cached_findings.items()
+                if (k.startswith(f"{org_id}:") or k.startswith("live:")) and f.execution_mode == "live"
+            ]
 
     category_str = category if isinstance(category, str) else None
     if category_str:
@@ -358,15 +381,17 @@ def approve_finding(
         )
 
     # ── Live Mode Execution ──
-    account_key = f"live:{finding.resource.account_id or ''}"
-    account_info = _connected_accounts.get(account_key)
-    if not account_info and finding.resource.account_id:
-        account_info = _connected_accounts.get(f"live:{finding.resource.account_id.replace('-', '')}")
+    target_account_id = (finding.resource.account_id or "").replace("-", "")
+    db_accounts = AccountRepository.get_accounts(finding_org, mode="live")
+    account_info = next((a for a in db_accounts if a["account_id"].replace("-", "") == target_account_id), None)
+    if not account_info:
+        account_key = f"live:{finding.resource.account_id or ''}"
+        account_info = _connected_accounts.get(account_key) or _connected_accounts.get(f"{finding_org}:{target_account_id}")
 
     if not account_info:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot execute live remediation: Target AWS account for {finding.resource.id} is not connected."
+            detail=f"Cannot execute live remediation: Target AWS account for {finding.resource.id} is not connected in tenant '{finding_org}'."
         )
 
     # Assume Remediation Role (Role 2) with atomic write permissions

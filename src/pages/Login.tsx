@@ -1,32 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Zap, Shield, Lock, Mail, ArrowRight,
   Building, User, KeyRound, Sparkles
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
+import { useDemo } from '../context/useDemo';
 import { sound } from '../utils/soundEngine';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, signup, isAuthenticated } = useAuth();
+  const { appMode } = useDemo();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('chetan@cloudpilot.io');
-  const [password, setPassword] = useState('••••••••••••');
-  const [name, setName] = useState('Chetan Bhagore');
-  const [org, setOrg] = useState('Acme Cloud Technologies');
+  const [email, setEmail] = useState('admin@acmecloud.io');
+  const [password, setPassword] = useState('CloudPilotAdmin2026!');
+  const [name, setName] = useState('');
+  const [org, setOrg] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    if (mode === 'signup') {
+      if (!name.trim() || !org.trim() || !email.trim()) {
+        setError('Please enter your full name, organization name, and work email.');
+        return;
+      }
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters long.');
+        return;
+      }
+      setIsLoading(true);
+      sound.playClick();
+      const res = await signup(name.trim(), email.trim(), password, org.trim());
+      setIsLoading(false);
+      if (res.success) {
+        sound.playSnap();
+        navigate('/');
+      } else {
+        sound.playWarning();
+        setError(res.error || 'Failed to create workspace. Please check your inputs.');
+      }
+      return;
+    }
+
     if (!email) {
       setError('Please enter your work email.');
       return;
     }
-    setError(null);
+
     setIsLoading(true);
     sound.playClick();
 
@@ -226,88 +259,111 @@ export default function Login() {
             </p>
           </div>
 
-          {/* Quick-Access Persona Banner */}
-          <div style={{
-            padding: 14,
-            borderRadius: 12,
-            background: 'var(--surface-secondary)',
-            border: '1px solid var(--border-subtle)',
-            marginBottom: 24
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Quick 1-Click Access
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--apple-blue)', fontWeight: 600 }}>
-                <Sparkles size={12} /> Pre-configured
-              </span>
+          {/* Quick-Access Persona Banner (Strictly Guarded: Sandbox & Dev Only) */}
+          {(appMode === 'demo' || import.meta.env.DEV) && (
+            <div style={{
+              padding: 14,
+              borderRadius: 12,
+              background: 'var(--surface-secondary)',
+              border: '1px solid var(--border-subtle)',
+              marginBottom: 24
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Sandbox Quick Access (Dev Only)
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--apple-blue)', fontWeight: 600 }}>
+                  <Sparkles size={12} /> Pre-configured Roles
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('admin@acmecloud.io', 'Sarah Jenkins (Owner)', 'CloudPilotAdmin2026!')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    background: '#FFFFFF',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
+                  <span>Owner</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('devops@acmecloud.io', 'Marcus Vance (DevOps)', 'DevOpsLead2026!')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    background: '#FFFFFF',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-blue)' }} />
+                  <span>DevOps</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('analyst@acmecloud.io', 'Elena Rostova (Analyst)', 'SecAnalyst2026!')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    background: '#FFFFFF',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-purple)' }} />
+                  <span>Analyst</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('viewer@acmecloud.io', 'Tom Bradley (Viewer)', 'ViewerOnly2026!')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-medium)',
+                    background: '#FFFFFF',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-tertiary)' }} />
+                  <span>Viewer</span>
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin@acmecloud.io', 'Sarah Jenkins (Owner)', 'CloudPilotAdmin2026!')}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-medium)',
-                  background: '#FFFFFF',
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
-                <span>Owner</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('devops@acmecloud.io', 'Marcus Vance (DevOps)', 'DevOpsLead2026!')}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-medium)',
-                  background: '#FFFFFF',
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-blue)' }} />
-                <span>DevOps</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('viewer@acmecloud.io', 'Tom Bradley (Viewer)', 'ViewerOnly2026!')}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-medium)',
-                  background: '#FFFFFF',
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-tertiary)' }} />
-                <span>Viewer</span>
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* SSO Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>

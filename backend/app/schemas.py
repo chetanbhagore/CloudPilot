@@ -209,6 +209,20 @@ class AuthenticatedUser(BaseModel):
     permissions: List[str]
     is_demo: bool = False
 
+class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=150)
+    password: str = Field(..., min_length=8, max_length=128)
+    organization_name: str = Field(..., min_length=2, max_length=100)
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ForgotPasswordResponse(BaseModel):
+    success: bool
+    message: str
+    reset_token: Optional[str] = None
+
 # ─── Standardized API Error Schemas ───────────────────────────────────────────
 class StandardErrorResponse(BaseModel):
     error_code: str

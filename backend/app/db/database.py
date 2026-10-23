@@ -236,13 +236,92 @@ def init_database_schema():
         INSERT OR IGNORE INTO organizations (id, name, created_at)
         VALUES 
             ('org-acme-prod', 'Acme Cloud Technologies', datetime('now')),
-            ('org-evil-tenant', 'Untrusted Third-Party Corp', datetime('now'));
+            ('org-evil-tenant', 'Untrusted Third-Party Corp', datetime('now')),
+            ('org-demo-simulated', 'CloudPilot Demo Sandbox', datetime('now'));
         """)
 
     logger.info("[DB] SQLite database schema and indexes initialized successfully.")
 
 
 # ── Tenant-Scoped Data Access Layer (Repositories) ────────────────────────────
+class OrganizationRepository:
+    @staticmethod
+    def create_organization(org_id: str, name: str, plan: str = "Enterprise") -> Dict[str, Any]:
+        with get_db_transaction() as conn:
+            conn.execute("""
+            INSERT OR REPLACE INTO organizations (id, name, plan, created_at)
+            VALUES (?, ?, ?, datetime('now'))
+            """, (org_id, name, plan))
+            return {"id": org_id, "name": name, "plan": plan}
+
+    @staticmethod
+    def get_organization(org_id: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            row = conn.execute("SELECT * FROM organizations WHERE id = ?", (org_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+class UserRepository:
+    @staticmethod
+    def create_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
+        with get_db_transaction() as conn:
+            conn.execute("""
+            INSERT OR REPLACE INTO users (
+                id, organization_id, email, name, role, password_hash, salt, is_active, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (
+                user_data["id"],
+                user_data["org_id"],
+                user_data["email"].lower(),
+                user_data["name"],
+                user_data["role"],
+                user_data["password_hash"],
+                user_data["salt"],
+                1 if user_data.get("is_active", True) else 0
+            ))
+            return user_data
+
+    @staticmethod
+    def get_by_email(email: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            row = conn.execute("SELECT * FROM users WHERE lower(email) = lower(?)", (email.strip(),)).fetchone()
+            if row:
+                d = dict(row)
+                d["org_id"] = d["organization_id"]
+                d["is_active"] = bool(d["is_active"])
+                return d
+            return None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row:
+                d = dict(row)
+                d["org_id"] = d["organization_id"]
+                d["is_active"] = bool(d["is_active"])
+                return d
+            return None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def list_by_org(org_id: str) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        try:
+            rows = conn.execute("SELECT id, organization_id, email, name, role, is_active, created_at FROM users WHERE organization_id = ?", (org_id,)).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
 class AccountRepository:
     @staticmethod
     def save_account(org_id: str, account_data: Dict[str, Any]):

@@ -46,6 +46,7 @@ export interface AuthContextType {
   unreadCount: number;
   isAuthenticated: boolean;
   login: (email: string, password?: string) => Promise<boolean> | boolean;
+  signup: (name: string, email: string, password: string, organizationName: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
