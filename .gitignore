@@ -36,3 +36,4 @@ venv/
 backend/data/
 scratch/
 agent_log.jsonl
+.vercel
