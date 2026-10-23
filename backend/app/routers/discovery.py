@@ -14,7 +14,7 @@ from app.schemas import (
     SafetyPassportModel,
     AuthenticatedUser
 )
-from app.services.aws_sts import assume_role, get_ec2_client, STSError
+from app.services.aws_sts import assume_role, connect_localstack, get_ec2_client, STSError
 from app.services.aws_discovery import scan_account_live, get_demo_scenario_findings
 from app.services.remediation import execute_live_remediation
 from app.services.safety_passport import (
@@ -105,13 +105,20 @@ def run_discovery_scan(
 
     _active_scans.add(lock_key)
     try:
-        credentials = assume_role(
-            role_arn=role_arn,
-            external_id=external_id,
-            session_name=f"CPScan-{sanitized_id[-4:]}",
-            region=request.region,
-            expected_account_id=sanitized_id
-        )
+        if account_info.get("is_localstack"):
+            credentials = connect_localstack(
+                account_id=sanitized_id,
+                endpoint_url=account_info.get("endpoint_url", "http://localhost:4566"),
+                region=request.region
+            )
+        else:
+            credentials = assume_role(
+                role_arn=role_arn,
+                external_id=external_id,
+                session_name=f"CPScan-{sanitized_id[-4:]}",
+                region=request.region,
+                expected_account_id=sanitized_id
+            )
 
         discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_account_live(
             account_id=sanitized_id,
@@ -400,13 +407,20 @@ def approve_finding(
     external_id = account_info["external_id"]
 
     try:
-        credentials = assume_role(
-            role_arn=rem_role_arn,
-            external_id=external_id,
-            session_name=f"CPRem-{finding.resource.id[:8]}",
-            region=finding.resource.region,
-            expected_account_id=account_info["account_id"]
-        )
+        if account_info.get("is_localstack"):
+            credentials = connect_localstack(
+                account_id=account_info["account_id"],
+                endpoint_url=account_info.get("endpoint_url", "http://localhost:4566"),
+                region=finding.resource.region
+            )
+        else:
+            credentials = assume_role(
+                role_arn=rem_role_arn,
+                external_id=external_id,
+                session_name=f"CPRem-{finding.resource.id[:8]}",
+                region=finding.resource.region,
+                expected_account_id=account_info["account_id"]
+            )
 
         # ── Pre-execution Safety Passport Revalidation ──
         passport = finding.passport or build_safety_passport(finding)

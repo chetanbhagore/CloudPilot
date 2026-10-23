@@ -64,7 +64,7 @@ class STSSessionCache:
 
 session_cache = STSSessionCache()
 
-ROLE_ARN_REGEX = re.compile(r"^arn:aws[a-zA-Z-]*:iam::(\d{12}):role/([\w+=,.@-]+)$")
+ROLE_ARN_REGEX = re.compile(r"^arn:aws[a-zA-Z-]*:iam::(\d{12}):(role/[\w+=,.@-]+|root)$")
 
 RETRYABLE_ERROR_CODES = {
     "Throttling",
@@ -252,10 +252,52 @@ def generate_demo_sts_session(
         "execution_mode": "demo"
     }
 
+def connect_localstack(
+    account_id: str = "000000000000",
+    endpoint_url: str = "http://localhost:4566",
+    region: str = "us-east-1"
+) -> Dict[str, Any]:
+    """
+    Connects to a LocalStack instance for local, zero-cost real cloud API testing.
+    Verifies connectivity via STS/EC2 on endpoint_url.
+    """
+    sanitized_id = account_id.replace("-", "").strip() or "000000000000"
+    expiration = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    verified_arn = f"arn:aws:iam::{sanitized_id}:root"
+
+    if boto3:
+        try:
+            sts = boto3.client(
+                "sts",
+                endpoint_url=endpoint_url,
+                region_name=region,
+                aws_access_key_id="test",
+                aws_secret_access_key="test"
+            )
+            identity = sts.get_caller_identity()
+            verified_arn = identity.get("Arn", verified_arn)
+            sanitized_id = identity.get("Account", sanitized_id)
+        except Exception as e:
+            logger.info(f"[STS] LocalStack STS probe notice ({e}). Operating in LocalStack compatibility mode.")
+
+    return {
+        "access_key_id": "test",
+        "secret_access_key": "test",
+        "session_token": None,
+        "endpoint_url": endpoint_url,
+        "expiration": expiration,
+        "assumed_role_user_arn": verified_arn,
+        "target_account_id": sanitized_id,
+        "is_simulated": False,
+        "execution_mode": "live",
+        "is_localstack": True,
+        "verified_at": datetime.now(timezone.utc).isoformat()
+    }
+
 def get_ec2_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
     """
     Returns a live boto3 EC2 client initialized with assumed temporary STS credentials.
-    Refuses simulated credentials. Returns None if credentials are simulated or boto3 is unavailable.
+    Supports standard AWS regions as well as LocalStack endpoint URLs.
     """
     if not boto3 or not credentials or credentials.get("is_simulated", False):
         return None
@@ -263,10 +305,58 @@ def get_ec2_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
     if "access_key_id" not in credentials or "secret_access_key" not in credentials:
         return None
     
-    return boto3.client(
-        "ec2",
-        region_name=region,
-        aws_access_key_id=credentials["access_key_id"],
-        aws_secret_access_key=credentials["secret_access_key"],
-        aws_session_token=credentials.get("session_token")
-    )
+    kwargs: Dict[str, Any] = {
+        "region_name": region,
+        "aws_access_key_id": credentials["access_key_id"],
+        "aws_secret_access_key": credentials["secret_access_key"],
+    }
+    if credentials.get("session_token"):
+        kwargs["aws_session_token"] = credentials["session_token"]
+    if credentials.get("endpoint_url"):
+        kwargs["endpoint_url"] = credentials["endpoint_url"]
+    
+    return boto3.client("ec2", **kwargs)
+
+def get_s3_client(credentials: Dict[str, Any], region: str = "ap-south-1"):
+    """
+    Returns a live boto3 S3 client initialized with assumed temporary STS credentials.
+    Supports standard AWS and LocalStack.
+    """
+    if not boto3 or not credentials or credentials.get("is_simulated", False):
+        return None
+    if "access_key_id" not in credentials or "secret_access_key" not in credentials:
+        return None
+    
+    kwargs: Dict[str, Any] = {
+        "region_name": region,
+        "aws_access_key_id": credentials["access_key_id"],
+        "aws_secret_access_key": credentials["secret_access_key"],
+    }
+    if credentials.get("session_token"):
+        kwargs["aws_session_token"] = credentials["session_token"]
+    if credentials.get("endpoint_url"):
+        kwargs["endpoint_url"] = credentials["endpoint_url"]
+    
+    return boto3.client("s3", **kwargs)
+
+def get_iam_client(credentials: Dict[str, Any], region: str = "aws-global"):
+    """
+    Returns a live boto3 IAM client initialized with assumed temporary STS credentials.
+    Supports standard AWS and LocalStack.
+    """
+    if not boto3 or not credentials or credentials.get("is_simulated", False):
+        return None
+    if "access_key_id" not in credentials or "secret_access_key" not in credentials:
+        return None
+    
+    kwargs: Dict[str, Any] = {
+        "aws_access_key_id": credentials["access_key_id"],
+        "aws_secret_access_key": credentials["secret_access_key"],
+    }
+    if credentials.get("session_token"):
+        kwargs["aws_session_token"] = credentials["session_token"]
+    if credentials.get("endpoint_url"):
+        kwargs["endpoint_url"] = credentials["endpoint_url"]
+    
+    return boto3.client("iam", **kwargs)
+

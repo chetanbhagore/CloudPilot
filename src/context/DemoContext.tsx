@@ -331,7 +331,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
           role_arn: `arn:aws:iam::${sanitizedId}:role/${liveAccountConfig.roleName}`,
           external_id: liveAccountConfig.externalId || `cp-tenant-${sanitizedId.slice(-4)}`,
           region: liveAccountConfig.region,
-          mode: 'live'
+          mode: 'live',
+          connection_type: liveAccountConfig.connectionType || (sanitizedId === '000000000000' ? 'localstack' : 'role_arn'),
+          endpoint_url: liveAccountConfig.endpointUrl
         })
       });
 

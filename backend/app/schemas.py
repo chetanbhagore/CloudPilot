@@ -22,6 +22,8 @@ class AccountConnectRequest(BaseModel):
     external_id: str = Field(..., description="Unique tenant ExternalId condition")
     region: str = Field(default="ap-south-1", description="AWS Primary Region")
     mode: ExecutionMode = Field(default="live", description="Explicit execution mode ('live' or 'demo')")
+    connection_type: Optional[str] = Field(default="role_arn", description="Connection type: 'role_arn' | 'localstack' | 'profile'")
+    endpoint_url: Optional[str] = Field(default=None, description="Custom endpoint URL for LocalStack (e.g. http://localhost:4566)")
 
 class AccountConnectResponse(BaseModel):
     success: bool

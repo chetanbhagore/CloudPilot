@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
 from app.schemas import FindingModel, ResourceModel, SafetyCheck, TelemetryPoint
-from app.services.aws_sts import get_ec2_client
+from app.services.aws_sts import get_ec2_client, get_s3_client, get_iam_client
 from app.services.safety_passport import build_safety_passport
 from app.services.cost_engine import calculate_ebs_cost_estimate
 
@@ -283,12 +283,276 @@ def scan_account_live(
             logger.error(f"[AWS Live Discovery] Error querying Security Groups in {r}: {e}")
             region_error = str(e)
 
+        # ── 3. Unassociated Elastic IPs (COST-EIP-001) ──────────────────────────
+        try:
+            addresses_resp = ec2_client.describe_addresses()
+            addresses = addresses_resp.get("Addresses", [])
+            region_resource_count += len(addresses)
+            for addr in addresses:
+                alloc_id = addr.get("AllocationId", "")
+                assoc_id = addr.get("AssociationId")
+                public_ip = addr.get("PublicIp", "")
+                if alloc_id and not assoc_id:
+                    eip_finding = FindingModel(
+                        id=f"live-eip-{alloc_id}",
+                        category="cost",
+                        severity="medium",
+                        title=f"Unassociated Elastic IP ({public_ip})",
+                        description=(
+                            f"Elastic IP {public_ip} ({alloc_id}) in account {account_id} ({r}) is allocated but unassociated "
+                            f"with any compute instance or NAT gateway. AWS charges $0.005/hour (~$3.60/month) for idle IPv4 addresses."
+                        ),
+                        rule="COST-EIP-001: Unassociated Elastic IP addresses must be released to eliminate idle IPv4 charges",
+                        resource=ResourceModel(
+                            id=alloc_id,
+                            type="AWS::EC2::EIP",
+                            name=f"idle-eip-{public_ip.replace('.', '-')}",
+                            region=r,
+                            age="Unassociated in VPC",
+                            account_id=account_id,
+                            tags={t.get("Key", ""): t.get("Value", "") for t in addr.get("Tags", [])}
+                        ),
+                        evidence=[
+                            "Source API: ec2:DescribeAddresses",
+                            f"Public IP: {public_ip} • AllocationId: {alloc_id}",
+                            "Association Status: None (Unattached to any network interface)",
+                            "Calculated Run-Rate: ~$3.60/month ($0.005/hour AWS IPv4 Idle Tariff)"
+                        ],
+                        estimatedMonthlyCost=3.60,
+                        estimatedSavings=3.60,
+                        status="open",
+                        detectedAt=now_iso,
+                        affectedService="Amazon VPC (Elastic IP)",
+                        recommendedAction=f"Release unassociated Elastic IP {public_ip} ({alloc_id}) back to the AWS pool.",
+                        operation="ec2:ReleaseAddress",
+                        operationParams={"AllocationId": alloc_id, "PublicIp": public_ip},
+                        preconditions=[
+                            SafetyCheck(
+                                label="Elastic IP Exists",
+                                passed=True,
+                                detail=f"Confirmed allocation {alloc_id} ({public_ip}) in {r}",
+                                evidence_source="ec2:DescribeAddresses",
+                                evaluated_at=now_iso
+                            ),
+                            SafetyCheck(
+                                label="Zero Active Associations",
+                                passed=True,
+                                detail="Confirmed 0 network interface or instance associations",
+                                evidence_source="ec2:DescribeAddresses",
+                                evaluated_at=now_iso
+                            )
+                        ],
+                        sideEffects=[f"Public IP {public_ip} will be returned to AWS pool and will no longer be owned by your account."],
+                        verificationPlan=[f"Call ec2:DescribeAddresses for {alloc_id} and assert address is absent."],
+                        recoveryGuidance=["Released Elastic IPs return to the AWS public pool. Re-allocation is best-effort."],
+                        recoveryLimitations="Released Elastic IPs return to the AWS public pool. Re-allocation cannot be guaranteed.",
+                        beforeState=f"{public_ip} ({alloc_id}): UNASSOCIATED (~$3.60/mo)",
+                        afterState=f"{public_ip} ({alloc_id}): RELEASED ($0.00/mo ✓)",
+                        execution_mode="live",
+                        data_source="live_aws",
+                        is_stale=False,
+                        verified_at=now_iso,
+                        account_id=account_id,
+                        scan_id=current_scan_id
+                    )
+                    eip_finding.passport = build_safety_passport(eip_finding)
+                    eip_finding.preconditions = eip_finding.passport.checks
+                    eip_finding.isSafetyBlocked = eip_finding.passport.is_safety_blocked
+                    eip_finding.blockedReason = eip_finding.passport.blocked_reason
+                    findings.append(eip_finding)
+        except Exception as e:
+            logger.info(f"[AWS Live Discovery] EIP scan in {r}: {e}")
+
+        # ── 4. S3 Bucket Public Access Block (SEC-S3-001) ───────────────────────
+        try:
+            s3_client = get_s3_client(credentials, region=r)
+            if s3_client:
+                buckets_resp = s3_client.list_buckets()
+                buckets = buckets_resp.get("Buckets", [])
+                region_resource_count += len(buckets)
+                for b in buckets:
+                    b_name = b.get("Name", "")
+                    if not b_name:
+                        continue
+                    is_public = False
+                    reason = ""
+                    try:
+                        pab = s3_client.get_public_access_block(Bucket=b_name)
+                        conf = pab.get("PublicAccessBlockConfiguration", {})
+                        if not all([conf.get("BlockPublicAcls"), conf.get("IgnorePublicAcls"), conf.get("BlockPublicPolicy"), conf.get("RestrictPublicBuckets")]):
+                            is_public = True
+                            reason = "Public Access Block settings are disabled or incomplete"
+                    except Exception as e:
+                        if "NoSuchPublicAccessBlockConfiguration" in str(e):
+                            is_public = True
+                            reason = "No Public Access Block configuration is present on this bucket"
+
+                    if is_public:
+                        s3_finding = FindingModel(
+                            id=f"live-s3-{b_name}",
+                            category="security",
+                            severity="critical",
+                            title=f"S3 Bucket '{b_name}' has Public Access Block disabled",
+                            description=(
+                                f"S3 bucket '{b_name}' in account {account_id} does not have S3 Block Public Access fully enabled. "
+                                f"{reason}. Objects in this bucket are vulnerable to public data exfiltration."
+                            ),
+                            rule="SEC-S3-001: S3 buckets must have S3 Block Public Access enabled across all 4 controls",
+                            resource=ResourceModel(
+                                id=b_name,
+                                type="AWS::S3::Bucket",
+                                name=b_name,
+                                region=r,
+                                age="Active Bucket",
+                                account_id=account_id,
+                                tags={}
+                            ),
+                            evidence=[
+                                "Source API: s3:GetPublicAccessBlock",
+                                f"Target Bucket: {b_name}",
+                                f"Vulnerability: {reason}",
+                                "Risk: Potential unauthorized public data read/write via internet"
+                            ],
+                            status="open",
+                            detectedAt=now_iso,
+                            affectedService="Amazon S3 (Simple Storage Service)",
+                            recommendedAction=f"Enable AWS S3 Block Public Access on bucket '{b_name}'.",
+                            operation="s3:PutPublicAccessBlock",
+                            operationParams={"Bucket": b_name},
+                            preconditions=[
+                                SafetyCheck(
+                                    label="Bucket Exists",
+                                    passed=True,
+                                    detail=f"Verified bucket '{b_name}' exists via s3:ListBuckets",
+                                    evidence_source="s3:ListBuckets",
+                                    evaluated_at=now_iso
+                                ),
+                                SafetyCheck(
+                                    label="Deficient Public Access Block",
+                                    passed=True,
+                                    detail=reason,
+                                    evidence_source="s3:GetPublicAccessBlock",
+                                    evaluated_at=now_iso
+                                )
+                            ],
+                            sideEffects=["Public read or write access to this bucket will be immediately blocked across all principals."],
+                            verificationPlan=[f"Call s3:GetPublicAccessBlock for '{b_name}' and assert all 4 public access block flags are True."],
+                            recoveryGuidance=[f"aws s3api delete-public-access-block --bucket {b_name}"],
+                            recoveryLimitations="Re-enabling public access requires explicit cloud administrator approval.",
+                            beforeState=f"Bucket {b_name}: PUBLIC ACCESS NOT BLOCKED (CRITICAL EXPOSURE)",
+                            afterState=f"Bucket {b_name}: BLOCK PUBLIC ACCESS ENABLED (VERIFIED ✓)",
+                            execution_mode="live",
+                            data_source="live_aws",
+                            is_stale=False,
+                            verified_at=now_iso,
+                            account_id=account_id,
+                            scan_id=current_scan_id
+                        )
+                        s3_finding.passport = build_safety_passport(s3_finding)
+                        s3_finding.preconditions = s3_finding.passport.checks
+                        s3_finding.isSafetyBlocked = s3_finding.passport.is_safety_blocked
+                        s3_finding.blockedReason = s3_finding.passport.blocked_reason
+                        findings.append(s3_finding)
+        except Exception as e:
+            logger.info(f"[AWS Live Discovery] S3 scan in {r}: {e}")
+
+
         if region_error and region_resource_count == 0:
             failed_regions.append(r)
             errors[r] = region_error
         else:
             successful_regions.append(r)
             total_resources_scanned += region_resource_count
+
+    # ── 5. Stale / Unrotated IAM Access Keys (SEC-IAM-001) ──────────────────────
+    try:
+        iam_client = get_iam_client(credentials)
+        if iam_client:
+            users_resp = iam_client.list_users(MaxItems=30)
+            users = users_resp.get("Users", [])
+            total_resources_scanned += len(users)
+            now_dt = datetime.now(timezone.utc)
+            for u in users:
+                u_name = u.get("UserName", "")
+                if not u_name:
+                    continue
+                keys_resp = iam_client.list_access_keys(UserName=u_name)
+                for k in keys_resp.get("AccessKeyMetadata", []):
+                    key_id = k.get("AccessKeyId", "")
+                    status = k.get("Status", "")
+                    create_dt = k.get("CreateDate")
+                    if status == "Active" and create_dt:
+                        if create_dt.tzinfo is None:
+                            create_dt = create_dt.replace(tzinfo=timezone.utc)
+                        age_days = (now_dt - create_dt).days
+                        if age_days > 90:
+                            iam_finding = FindingModel(
+                                id=f"live-iam-{key_id}",
+                                category="security",
+                                severity="high",
+                                title=f"Stale Active IAM Access Key ({key_id}) for {u_name}",
+                                description=(
+                                    f"IAM user '{u_name}' has an active access key '{key_id}' created {age_days} days ago without rotation. "
+                                    f"CIS AWS Foundations Benchmark 1.14 mandates rotating active access keys every 90 days."
+                                ),
+                                rule="SEC-IAM-001: IAM access keys must be rotated at least every 90 days",
+                                resource=ResourceModel(
+                                    id=key_id,
+                                    type="AWS::IAM::AccessKey",
+                                    name=f"{u_name}-{key_id[-4:]}",
+                                    region="global",
+                                    age=f"Active ({age_days} days old)",
+                                    account_id=account_id,
+                                    tags={}
+                                ),
+                                evidence=[
+                                    "Source API: iam:ListAccessKeys",
+                                    f"IAM User: {u_name} • Key ID: {key_id}",
+                                    f"Key Age: {age_days} days (Created: {create_dt.strftime('%Y-%m-%d')})",
+                                    "Compliance: Violates CIS AWS Foundations Benchmark 1.14 (>90 days)"
+                                ],
+                                status="open",
+                                detectedAt=now_iso,
+                                affectedService="AWS Identity and Access Management (IAM)",
+                                recommendedAction=f"Deactivate stale access key {key_id} for user {u_name} and generate a fresh key.",
+                                operation="iam:UpdateAccessKey",
+                                operationParams={"UserName": u_name, "AccessKeyId": key_id, "Status": "Inactive"},
+                                preconditions=[
+                                    SafetyCheck(
+                                        label="Access Key Exists",
+                                        passed=True,
+                                        detail=f"Verified key {key_id} exists for {u_name}",
+                                        evidence_source="iam:ListAccessKeys",
+                                        evaluated_at=now_iso
+                                    ),
+                                    SafetyCheck(
+                                        label="Key Age Exceeds 90 Days",
+                                        passed=True,
+                                        detail=f"Key is {age_days} days old",
+                                        evidence_source="iam:ListAccessKeys",
+                                        evaluated_at=now_iso
+                                    )
+                                ],
+                                sideEffects=[f"Applications or scripts using key {key_id} will immediately lose authentication."],
+                                verificationPlan=[f"Call iam:ListAccessKeys for {u_name} and assert {key_id} status is 'Inactive'."],
+                                recoveryGuidance=[f"aws iam update-access-key --user-name {u_name} --access-key-id {key_id} --status Active"],
+                                recoveryLimitations="Re-activating an inactive key restores previous permissions instantly.",
+                                beforeState=f"Key {key_id} ({u_name}): ACTIVE ({age_days}d old, STALE)",
+                                afterState=f"Key {key_id} ({u_name}): INACTIVE (ROTATED ✓)",
+                                execution_mode="live",
+                                data_source="live_aws",
+                                is_stale=False,
+                                verified_at=now_iso,
+                                account_id=account_id,
+                                scan_id=current_scan_id
+                            )
+                            iam_finding.passport = build_safety_passport(iam_finding)
+                            iam_finding.preconditions = iam_finding.passport.checks
+                            iam_finding.isSafetyBlocked = iam_finding.passport.is_safety_blocked
+                            iam_finding.blockedReason = iam_finding.passport.blocked_reason
+                            findings.append(iam_finding)
+    except Exception as e:
+        logger.info(f"[AWS Live Discovery] IAM scan: {e}")
 
     logger.info(
         f"[AWS Live Discovery] Scan {current_scan_id} finished: {len(findings)} findings across "

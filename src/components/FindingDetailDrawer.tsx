@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, ArrowRight, Activity, AlertTriangle, Info, CheckCircle2, ShieldAlert, Sparkles
+  X, ArrowRight, Activity, AlertTriangle, Info, CheckCircle2, ShieldAlert, Sparkles, RefreshCw
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { type Finding } from '../data/mockData';
 import { sound } from '../utils/soundEngine';
+import { useDemo } from '../context/useDemo';
 
 interface DrawerProps {
   finding: Finding | null;
@@ -13,7 +14,56 @@ interface DrawerProps {
   onViewPassport: (finding: Finding) => void;
 }
 
+interface AIExplanationData {
+  finding_id: string;
+  resource_id: string;
+  observed_facts: string[];
+  root_cause_analysis: string;
+  blast_radius_summary: string;
+  recommended_action: string;
+  action_type: string;
+  is_action_supported_by_engine: boolean;
+  uncertainty_and_limitations: string[];
+  evidence_provenance: string;
+  disclaimer: string;
+}
+
 export default function FindingDetailDrawer({ finding, onClose, onViewPassport }: DrawerProps) {
+  const { backendUrl, appMode } = useDemo();
+  const [aiData, setAiData] = useState<AIExplanationData | null>(null);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Fetch live AI explanation whenever finding changes
+  useEffect(() => {
+    if (!finding) {
+      setAiData(null);
+      return;
+    }
+
+    setIsLoadingAi(true);
+    setAiError(null);
+    const token = localStorage.getItem('cloudpilot_jwt_token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const mode = finding.execution_mode === 'demo' || finding.executionMode === 'demo' || appMode === 'demo' ? 'demo' : 'live';
+    fetch(`${backendUrl}/findings/${finding.id}/explain?mode=${mode}`, { headers })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setAiData(data);
+      })
+      .catch((err) => {
+        setAiError(err.message);
+      })
+      .finally(() => {
+        setIsLoadingAi(false);
+      });
+  }, [finding?.id, backendUrl, appMode]);
+
   // Listen for Escape key to close drawer smoothly
   useEffect(() => {
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -246,27 +296,85 @@ export default function FindingDetailDrawer({ finding, onClose, onViewPassport }
 
             {/* Grounded AI Evidence Explanation */}
             <div style={{ background: '#F5F5F7', border: '1px solid rgba(0, 113, 227, 0.2)', borderRadius: 12, padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--apple-blue)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Sparkles size={15} color="var(--apple-blue)" /> Grounded AI Evidence Analysis
+                  <Sparkles size={15} color="var(--apple-blue)" className={isLoadingAi ? 'spin' : ''} />
+                  <span>Evidence-Grounded AI Root Cause & Blast Radius</span>
                 </div>
-                <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(0, 113, 227, 0.08)', color: 'var(--apple-blue)' }}>
-                  Advisory Only
-                </span>
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.55, marginBottom: 10 }}>
-                {finding.operation === 'ec2:RevokeSecurityGroupIngress' ? (
-                  <>Security Group <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.05)', padding: '2px 4px', borderRadius: 4 }}>{finding.resource.id}</code> exposes inbound TCP:22 (SSH) to the public internet (<code style={{ fontFamily: 'var(--font-mono)' }}>0.0.0.0/0</code>). Verified via live EC2 describe telemetry.</>
-                ) : (
-                  <>Observed cloud resource <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.05)', padding: '2px 4px', borderRadius: 4 }}>{finding.resource.id}</code> detected with status <span style={{ fontWeight: 600 }}>{finding.status}</span>. Inaction incurs ongoing risk or expenditure.</>
-                )}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)', paddingTop: 8 }}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <span style={{ color: 'var(--apple-amber-dark)', fontWeight: 700 }}>⚠️</span>
-                  <span><strong>Uncertainty / Boundary Condition:</strong> External corporate firewalls or VPN tunnels terminating outside AWS cannot be inspected. Human review via Safety Passport™ is mandatory.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {aiData?.evidence_provenance && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(0, 113, 227, 0.12)', color: 'var(--apple-blue)' }}>
+                      {aiData.evidence_provenance}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(0, 0, 0, 0.06)', color: 'var(--text-secondary)' }}>
+                    Advisory Only
+                  </span>
                 </div>
               </div>
+
+              {isLoadingAi ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  <RefreshCw size={14} className="spin" />
+                  <span>Synthesizing live cloud telemetry, blast radius, and recovery boundaries…</span>
+                </div>
+              ) : aiData ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                      Root Cause Analysis
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                      {aiData.root_cause_analysis}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--apple-crimson-dark)', marginBottom: 4 }}>
+                      Blast Radius & Impact Assessment
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                      {aiData.blast_radius_summary}
+                    </div>
+                  </div>
+
+                  {aiData.observed_facts && aiData.observed_facts.length > 0 && (
+                    <div style={{ background: '#FFFFFF', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6 }}>
+                        Verified Facts from Telemetry:
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {aiData.observed_facts.map((fact, idx) => (
+                          <div key={idx} style={{ fontSize: 12, color: 'var(--text-primary)', display: 'flex', gap: 6 }}>
+                            <span style={{ color: 'var(--apple-blue)', fontWeight: 700 }}>✓</span>
+                            <span>{fact}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {aiData.uncertainty_and_limitations && aiData.uncertainty_and_limitations.length > 0 && (
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {aiData.uncertainty_and_limitations.map((limit, idx) => (
+                        <div key={idx} style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', gap: 6 }}>
+                          <span style={{ color: 'var(--apple-amber-dark)', fontWeight: 700 }}>⚠️</span>
+                          <span><strong>Boundary Condition:</strong> {limit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                  {finding.description}
+                  {aiError && (
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+                      Notice: Advisory AI service offline ({aiError}). Displaying verified AWS telemetry baseline.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Proposed Remediation & Preconditions */}

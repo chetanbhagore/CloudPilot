@@ -20,6 +20,8 @@ export interface AccountConfig {
   connectionError: string | null;
   externalId?: string;
   isLive?: boolean;
+  connectionType?: 'role_arn' | 'localstack';
+  endpointUrl?: string;
 }
 
 export interface DemoContextType {

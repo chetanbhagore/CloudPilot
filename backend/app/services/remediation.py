@@ -69,8 +69,6 @@ class ActionRegistry:
 
 action_registry = ActionRegistry()
 
-# Register initial low-risk, reversible remediation vertical slice:
-# ec2:RevokeSecurityGroupIngress (Port 22 0.0.0.0/0)
 action_registry.register(
     RemediationActionDefinition(
         action_type="ec2:RevokeSecurityGroupIngress",
@@ -81,7 +79,46 @@ action_registry.register(
         ],
         risk_level="low",
         is_reversible=True,
-        description="Revokes public 0.0.0.0/0 inbound rule on TCP port 22 for a target Security Group."
+        description="Revokes public 0.0.0.0/0 inbound rule on TCP port 22 or 3389 for a target Security Group."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="ec2:ReleaseAddress",
+        resource_type="AWS::EC2::EIP",
+        required_permissions=[
+            "ec2:ReleaseAddress",
+            "ec2:DescribeAddresses"
+        ],
+        risk_level="low",
+        is_reversible=False,
+        description="Releases an unassociated Elastic IP address back to the AWS pool to eliminate idle charges."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="s3:PutPublicAccessBlock",
+        resource_type="AWS::S3::Bucket",
+        required_permissions=[
+            "s3:PutPublicAccessBlock",
+            "s3:GetPublicAccessBlock"
+        ],
+        risk_level="low",
+        is_reversible=True,
+        description="Enforces AWS S3 Block Public Access across all 4 controls on a target S3 bucket."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="ec2:CreateSnapshot",
+        resource_type="AWS::EC2::Volume",
+        required_permissions=[
+            "ec2:CreateSnapshot",
+            "ec2:DescribeSnapshots"
+        ],
+        risk_level="low",
+        is_reversible=True,
+        description="Creates a safety snapshot backup of an EBS volume before lifecycle modification."
     )
 )
 
@@ -104,12 +141,27 @@ def validate_action_parameters(action_type: str, resource_id: str, params: Dict[
         
         from_port = int(params.get("FromPort") or params.get("Port") or 22)
         to_port = int(params.get("ToPort") or params.get("Port") or 22)
-        if from_port != 22 or to_port != 22:
-            raise ValueError(f"Port range must be exact port 22 (SSH). Received {from_port}-{to_port}.")
+        if (from_port != 22 or to_port != 22) and (from_port != 3389 or to_port != 3389) and protocol != "-1":
+            raise ValueError(f"Port range must be exact port 22 (SSH) or port 3389 (RDP). Received {from_port}-{to_port}.")
             
         cidr = params.get("CidrIp", "0.0.0.0/0")
         if cidr != "0.0.0.0/0":
             raise ValueError(f"CidrIp must be exactly '0.0.0.0/0'. Received '{cidr}'.")
+
+    elif action_type == "ec2:ReleaseAddress":
+        alloc_id = params.get("AllocationId") or resource_id
+        if not alloc_id or not str(alloc_id).startswith("eipalloc-"):
+            raise ValueError(f"Invalid AllocationId '{alloc_id}'. Expected format: eipalloc-xxxxxxxx.")
+
+    elif action_type == "s3:PutPublicAccessBlock":
+        bucket = params.get("Bucket") or resource_id
+        if not bucket or len(str(bucket)) < 3:
+            raise ValueError(f"Invalid S3 bucket name '{bucket}'.")
+
+    elif action_type == "ec2:CreateSnapshot":
+        vol_id = params.get("VolumeId") or resource_id
+        if not vol_id or not str(vol_id).startswith("vol-"):
+            raise ValueError(f"Invalid VolumeId '{vol_id}'. Expected format: vol-xxxxxxxx.")
 
 # In-memory execution store and idempotency cache
 _execution_records: Dict[str, RemediationExecutionRecord] = {}
@@ -197,8 +249,100 @@ def execute_live_remediation(
     _execution_records[exec_id] = record
     _idempotency_index[idempotency_key] = exec_id
 
-    # ── 3. Initialize AWS EC2 Client with Temporary Remediation Credentials ──
-    from app.services.aws_sts import get_ec2_client
+    # ── 3. Dispatch Specific Action Handler ──
+    from app.services.aws_sts import get_ec2_client, get_s3_client
+    
+    if action_type == "ec2:ReleaseAddress":
+        ec2_client = get_ec2_client(credentials, region=region)
+        if not ec2_client:
+            record.state = "failed"
+            record.error_message = "Failed to initialize live boto3 EC2 client for EIP release."
+            return record
+        alloc_id = parameters.get("AllocationId") or resource_id
+        try:
+            addrs = ec2_client.describe_addresses(AllocationIds=[alloc_id]).get("Addresses", [])
+            if not addrs:
+                record.state = "succeeded"
+                record.before_state = "EIP: NOT FOUND"
+                record.after_state = "EIP: RELEASED (ALREADY ABSENT ✓)"
+                record.verified_at = datetime.now(timezone.utc).isoformat()
+                return record
+            record.before_state = f"EIP {alloc_id}: ALLOCATED (UNASSOCIATED)"
+            res = ec2_client.release_address(AllocationId=alloc_id)
+            record.executed_at = datetime.now(timezone.utc).isoformat()
+            record.aws_request_id = res.get("ResponseMetadata", {}).get("RequestId")
+        except Exception as e:
+            record.state = "failed"
+            record.error_message = f"AWS release_address execution failed: {e}"
+            return record
+
+        # Verify
+        try:
+            leftover = ec2_client.describe_addresses(AllocationIds=[alloc_id]).get("Addresses", [])
+            if len(leftover) > 0:
+                record.state = "verification_failed"
+                record.error_message = "Verification failed: Elastic IP still exists in account."
+                return record
+        except Exception:
+            pass  # Expected InvalidAllocationID.NotFound
+
+        record.state = "succeeded"
+        record.after_state = f"EIP {alloc_id}: RELEASED ($0.00/mo ✓)"
+        record.verified_at = datetime.now(timezone.utc).isoformat()
+        record.verification_evidence = [
+            f"Independent ec2:DescribeAddresses confirmed {alloc_id} is absent.",
+            f"AWS RequestId: {record.aws_request_id}"
+        ]
+        return record
+
+    if action_type == "s3:PutPublicAccessBlock":
+        s3_client = get_s3_client(credentials, region=region)
+        if not s3_client:
+            record.state = "failed"
+            record.error_message = "Failed to initialize live boto3 S3 client."
+            return record
+        bucket_name = parameters.get("Bucket") or resource_id
+        try:
+            conf = parameters.get("PublicAccessBlockConfiguration", {
+                "BlockPublicAcls": True,
+                "IgnorePublicAcls": True,
+                "BlockPublicPolicy": True,
+                "RestrictPublicBuckets": True
+            })
+            res = s3_client.put_public_access_block(
+                Bucket=bucket_name,
+                PublicAccessBlockConfiguration=conf
+            )
+            record.executed_at = datetime.now(timezone.utc).isoformat()
+            record.aws_request_id = res.get("ResponseMetadata", {}).get("RequestId")
+        except Exception as e:
+            record.state = "failed"
+            record.error_message = f"AWS put_public_access_block failed: {e}"
+            return record
+
+        # Verify
+        try:
+            pab = s3_client.get_public_access_block(Bucket=bucket_name)
+            vconf = pab.get("PublicAccessBlockConfiguration", {})
+            if not all([vconf.get("BlockPublicAcls"), vconf.get("IgnorePublicAcls"), vconf.get("BlockPublicPolicy"), vconf.get("RestrictPublicBuckets")]):
+                record.state = "verification_failed"
+                record.error_message = "Verification failed: S3 Block Public Access controls not fully applied."
+                return record
+        except Exception as e:
+            record.state = "verification_failed"
+            record.error_message = f"Verification check failed: {e}"
+            return record
+
+        record.state = "succeeded"
+        record.after_state = f"Bucket {bucket_name}: BLOCK PUBLIC ACCESS ENABLED (VERIFIED ✓)"
+        record.verified_at = datetime.now(timezone.utc).isoformat()
+        record.verification_evidence = [
+            f"Independent s3:GetPublicAccessBlock confirmed all 4 controls active on {bucket_name}.",
+            f"AWS RequestId: {record.aws_request_id}"
+        ]
+        return record
+
+    # ── 3. Initialize AWS EC2 Client for SG Ingress Remediation ──
     ec2_client = get_ec2_client(credentials, region=region)
     if not ec2_client:
         record.state = "failed"

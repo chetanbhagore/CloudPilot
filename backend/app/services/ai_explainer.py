@@ -89,6 +89,45 @@ def generate_finding_explanation(finding: FindingModel) -> FindingAIExplanation:
             "CloudPilot cannot determine whether historical database data on this unattached volume is subject to statutory retention.",
             "A pre-deletion snapshot is recommended before any destructive storage operation."
         ])
+    elif "ReleaseAddress" in finding.operation or "EIP" in finding.resource.type:
+        root_cause = (
+            f"Elastic IP '{finding.resource.id}' is allocated to the account but currently unassociated with any ENI or compute instance, "
+            f"incurring ongoing AWS idle IPv4 charges ($0.005/hour)."
+        )
+        blast_radius = (
+            "Risk of inaction: Continuous unutilized cloud expenditure. "
+            "Remediation impact: Returns public IP to AWS pool. Zero compute interruption."
+        )
+        uncertainty.extend([
+            "Once released, an Elastic IP cannot be guaranteed to be re-allocated if needed in the future.",
+            "Confirm that no external DNS or third-party allowlists reference this public IP."
+        ])
+    elif "PutPublicAccessBlock" in finding.operation or "Bucket" in finding.resource.type:
+        root_cause = (
+            f"S3 bucket '{finding.resource.id}' does not have AWS S3 Block Public Access fully enabled. "
+            f"Objects in this bucket may be exposed to unauthenticated public internet requests."
+        )
+        blast_radius = (
+            "Risk of inaction: Critical risk of data exfiltration and compliance breach. "
+            "Remediation impact: Immediately blocks public ACLs and public policies across the bucket."
+        )
+        uncertainty.extend([
+            "If this bucket is intentionally hosting public web assets (e.g. static website), public access will be blocked.",
+            "Verify whether public internet access is a documented architectural requirement before enforcing."
+        ])
+    elif "AccessKey" in finding.resource.type or "UpdateAccessKey" in finding.operation:
+        root_cause = (
+            f"IAM Access Key '{finding.resource.id}' is active and older than 90 days without rotation, "
+            f"violating CIS AWS Foundations Benchmark 1.14."
+        )
+        blast_radius = (
+            "Risk of inaction: Prolonged window of vulnerability in the event of credential leakage. "
+            "Remediation impact: Deactivates access key. Any automation or CI/CD pipelines using this key will immediately fail authentication."
+        )
+        uncertainty.extend([
+            "CloudPilot cannot identify external CI/CD systems or third-party tools that may have this key embedded in environment secrets.",
+            "Ensure a replacement access key has been generated and distributed before deactivating."
+        ])
     else:
         root_cause = f"Resource '{finding.resource.id}' violates cloud governance rule '{finding.rule}'."
         blast_radius = "Review finding evidence and resource tags prior to taking remediation action."

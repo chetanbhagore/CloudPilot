@@ -203,9 +203,50 @@ export default function Connect() {
               </div>
             </div>
 
+            {/* Connection Method Selector */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  updateAccountConfig({
+                    connectionType: 'role_arn',
+                    accountId: '',
+                    roleName: 'CloudPilotAuditRole',
+                    region: 'ap-south-1',
+                    endpointUrl: undefined
+                  });
+                }}
+                className={`btn btn-sm ${accountConfig.connectionType !== 'localstack' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 12 }}
+              >
+                AWS IAM Cross-Account Role
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  updateAccountConfig({
+                    connectionType: 'localstack',
+                    accountId: '000000000000',
+                    roleName: 'LocalStackRole',
+                    region: 'us-east-1',
+                    endpointUrl: 'http://localhost:4566',
+                    externalId: 'localstack-tenant-0000'
+                  });
+                }}
+                className={`btn btn-sm ${accountConfig.connectionType === 'localstack' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 12 }}
+              >
+                LocalStack (Local Dev Cloud)
+              </button>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Deploy the CloudFormation template on your target AWS account, then enter your account ID and role name below. CloudPilot will perform a live STS AssumeRole handshake:
+                {accountConfig.connectionType === 'localstack'
+                  ? 'Connect directly to your local LocalStack emulator on http://localhost:4566. Performs real boto3 calls against local EC2/S3/VPC with zero AWS cloud costs.'
+                  : 'Deploy the CloudFormation template on your target AWS account, then enter your account ID and role name below. CloudPilot will perform a live STS AssumeRole handshake:'}
               </p>
 
               {/* Account ID input */}

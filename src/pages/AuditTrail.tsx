@@ -68,9 +68,35 @@ export default function AuditTrail() {
   }, [auditRecords, liveAuditEvents, searchQuery]);
 
 
-  const handleExport = () => {
+  const handleExport = async () => {
     sound.playSuccess();
     setExported(true);
+
+    if (appMode === 'live') {
+      try {
+        const token = localStorage.getItem('cloudpilot_jwt_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${backendUrl}/audit/export?format=json&mode=live`, { headers });
+        if (res.ok) {
+          const exportData = await res.json();
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `cloudpilot-soc2-audit-attestation-${Date.now()}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          setTimeout(() => setExported(false), 2400);
+          return;
+        }
+      } catch (e) {
+        console.warn('Backend audit export fallback:', e);
+      }
+    }
+
     exportAuditCSV();
     setTimeout(() => setExported(false), 2400);
   };

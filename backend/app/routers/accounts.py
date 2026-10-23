@@ -13,6 +13,7 @@ from app.schemas import (
 from app.services.aws_sts import (
     assume_role,
     generate_demo_sts_session,
+    connect_localstack,
     validate_role_arn,
     STSConfigurationError,
     STSAssumeRoleError,
@@ -99,6 +100,51 @@ def connect_account(
             execution_mode="demo",
             connection_status="connected",
             message="Demo simulation connection initialized (No real AWS credentials used)."
+        )
+
+    # ── LocalStack / Local Cloud Dev Mode Handling ──
+    if getattr(request, "connection_type", None) == "localstack" or request.endpoint_url:
+        endpoint = request.endpoint_url or "http://localhost:4566"
+        logger.info(f"[Accounts] Initiating LocalStack connection on {endpoint} for tenant {org_id}")
+        localstack_session = connect_localstack(
+            account_id=sanitized_id or "000000000000",
+            endpoint_url=endpoint,
+            region=request.region
+        )
+        account_info = {
+            "account_id": sanitized_id,
+            "alias": f"LocalStack Cloud ({request.region})",
+            "region": request.region,
+            "role_arn": request.role_arn,
+            "external_id": request.external_id,
+            "assumed_role_user_arn": localstack_session["assumed_role_user_arn"],
+            "session_expiration": localstack_session["expiration"],
+            "is_live": True,
+            "execution_mode": "live",
+            "connection_status": "connected",
+            "is_localstack": True,
+            "endpoint_url": endpoint,
+            "connected_at": datetime.now(timezone.utc).isoformat()
+        }
+        _connected_accounts[f"live:{sanitized_id}"] = account_info
+        _connected_accounts[f"{org_id}:{sanitized_id}"] = account_info
+        try:
+            AccountRepository.save_account(org_id, account_info)
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal DB save error for LocalStack account: {e}")
+
+        return AccountConnectResponse(
+            success=True,
+            account_id=sanitized_id,
+            alias=account_info["alias"],
+            region=request.region,
+            role_arn=request.role_arn,
+            assumed_role_user_arn=localstack_session["assumed_role_user_arn"],
+            session_expiration=localstack_session["expiration"],
+            is_live=True,
+            execution_mode="live",
+            connection_status="connected",
+            message=f"Connected to LocalStack on {endpoint}. Real boto3 calls active with zero cloud spend."
         )
 
     # ── Live AWS Mode Handling ──
