@@ -1,0 +1,8 @@
+backend/
+.env*
+*.md
+docker-compose*
+Dockerfile
+nginx.conf
+azure-test-bed.json
+render.yaml
