@@ -293,19 +293,31 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setLiveAccountConfig((prev) => ({ ...prev, isConnecting: true, connectionError: null }));
     setLiveErrorMessage(null);
 
-    const sanitizedId = liveAccountConfig.accountId.replace(/\D/g, '');
-    if (sanitizedId.length !== 12) {
-      const err = 'AWS Account ID must be exactly 12 numeric digits (e.g. 123456789012).';
-      setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
-      setLiveConnectionStatus('failed');
-      return { success: false, error: err };
-    }
+    const isAzure = liveAccountConfig.cloudProvider === 'azure';
 
-    if (!liveAccountConfig.roleName.trim()) {
-      const err = 'IAM Role name is required (e.g. CloudPilotAuditRole).';
-      setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
-      setLiveConnectionStatus('failed');
-      return { success: false, error: err };
+    if (isAzure) {
+      const subId = (liveAccountConfig.azureSubscriptionId || liveAccountConfig.accountId || '').trim();
+      if (!subId || !liveAccountConfig.azureTenantId || !liveAccountConfig.azureClientId || !liveAccountConfig.azureClientSecret) {
+        const err = 'Azure connection requires Subscription ID, Tenant ID, Client ID, and Client Secret.';
+        setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
+        setLiveConnectionStatus('failed');
+        return { success: false, error: err };
+      }
+    } else {
+      const sanitizedId = liveAccountConfig.accountId.replace(/\D/g, '');
+      if (sanitizedId.length !== 12) {
+        const err = 'AWS Account ID must be exactly 12 numeric digits (e.g. 123456789012).';
+        setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
+        setLiveConnectionStatus('failed');
+        return { success: false, error: err };
+      }
+
+      if (!liveAccountConfig.roleName.trim()) {
+        const err = 'IAM Role name is required (e.g. CloudPilotAuditRole).';
+        setLiveAccountConfig((prev) => ({ ...prev, isConnecting: false, connectionError: err, isConnected: false }));
+        setLiveConnectionStatus('failed');
+        return { success: false, error: err };
+      }
     }
 
     setLiveConnectionStatus('connecting');
@@ -323,18 +335,36 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const sanitizedId = isAzure
+        ? (liveAccountConfig.azureSubscriptionId || liveAccountConfig.accountId || '').trim()
+        : liveAccountConfig.accountId.replace(/\D/g, '');
+
+      const requestPayload = isAzure
+        ? {
+            account_id: sanitizedId,
+            cloud_provider: 'azure',
+            region: liveAccountConfig.region || 'eastus',
+            mode: 'live',
+            azure_tenant_id: liveAccountConfig.azureTenantId,
+            azure_client_id: liveAccountConfig.azureClientId,
+            azure_client_secret: liveAccountConfig.azureClientSecret,
+            azure_subscription_id: sanitizedId
+          }
+        : {
+            account_id: sanitizedId,
+            role_arn: `arn:aws:iam::${sanitizedId}:role/${liveAccountConfig.roleName}`,
+            external_id: liveAccountConfig.externalId || `cp-tenant-${sanitizedId.slice(-4)}`,
+            region: liveAccountConfig.region,
+            mode: 'live',
+            cloud_provider: 'aws',
+            connection_type: liveAccountConfig.connectionType || (sanitizedId === '000000000000' ? 'localstack' : 'role_arn'),
+            endpoint_url: liveAccountConfig.endpointUrl
+          };
+
       const res = await fetch(`${backendUrl}/accounts/connect`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          account_id: sanitizedId,
-          role_arn: `arn:aws:iam::${sanitizedId}:role/${liveAccountConfig.roleName}`,
-          external_id: liveAccountConfig.externalId || `cp-tenant-${sanitizedId.slice(-4)}`,
-          region: liveAccountConfig.region,
-          mode: 'live',
-          connection_type: liveAccountConfig.connectionType || (sanitizedId === '000000000000' ? 'localstack' : 'role_arn'),
-          endpoint_url: liveAccountConfig.endpointUrl
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (res.ok) {
@@ -342,7 +372,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         setLiveAccountConfig((prev) => ({
           ...prev,
           accountId: sanitizedId,
-          alias: data.alias || `AWS Account ${sanitizedId.slice(0, 4)}... (${prev.region})`,
+          alias: data.alias || (isAzure ? `Azure Subscription (${sanitizedId.slice(0, 8)}...)` : `AWS Account ${sanitizedId.slice(0, 4)}... (${prev.region})`),
           isConnecting: false,
           isConnected: true,
           connectionError: null,
@@ -402,7 +432,10 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const sanitizedId = liveAccountConfig.accountId.replace(/\D/g, '');
+      const isAzure = liveAccountConfig.cloudProvider === 'azure';
+      const sanitizedId = isAzure
+        ? (liveAccountConfig.azureSubscriptionId || liveAccountConfig.accountId || '').trim()
+        : liveAccountConfig.accountId.replace(/\D/g, '');
       const token = typeof window !== 'undefined' ? localStorage.getItem('cloudpilot_jwt_token') : null;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -412,7 +445,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         headers,
         body: JSON.stringify({
           account_id: sanitizedId,
-          region: liveAccountConfig.region,
+          region: liveAccountConfig.region || (isAzure ? 'eastus' : 'ap-south-1'),
+          cloud_provider: isAzure ? 'azure' : 'aws',
           mode: 'live'
         })
       });

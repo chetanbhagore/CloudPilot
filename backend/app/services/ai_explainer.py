@@ -128,13 +128,81 @@ def generate_finding_explanation(finding: FindingModel) -> FindingAIExplanation:
             "CloudPilot cannot identify external CI/CD systems or third-party tools that may have this key embedded in environment secrets.",
             "Ensure a replacement access key has been generated and distributed before deactivating."
         ])
+    elif finding.operation == "azure:network/networkSecurityGroups/securityRules/delete":
+        meta = getattr(finding, "metadata", None) or getattr(finding, "operationParams", None) or {}
+        rule_name = meta.get("rule_name") or finding.resource.name or "security rule"
+        root_cause = (
+            f"Azure Network Security Group '{finding.resource.name}' contains rule '{rule_name}' "
+            f"allowing unrestricted inbound traffic from '{meta.get('source_address_prefix', '*')}' "
+            f"on destination port {meta.get('destination_port', '22/3389')}. "
+            f"This exposes management interfaces directly to the public internet."
+        )
+        blast_radius = (
+            "Risk of inaction: Vulnerable to automated internet crawlers, brute-force SSH/RDP attacks, and zero-day exploits. "
+            "Remediation impact: Permanently deletes the insecure inbound security rule from the NSG. "
+            "Internal VNet and VPN/Bastion connections will remain unaffected if configured via separate private rules."
+        )
+        uncertainty.extend([
+            "Verify whether administrative access requires direct public IP access or if Azure Bastion / VPN gateway is available.",
+            f"Rollback: az network nsg rule create -g {meta.get('resource_group', '<rg>')} --nsg-name {meta.get('nsg_name', '<nsg>')} -n {rule_name} --priority {meta.get('priority', '1000')} --direction Inbound --access Allow --protocol Tcp --destination-port-ranges {meta.get('destination_port', '22')}"
+        ])
+    elif finding.operation == "azure:network/publicIPAddresses/delete":
+        meta = getattr(finding, "metadata", None) or getattr(finding, "operationParams", None) or {}
+        root_cause = (
+            f"Azure Public IP '{finding.resource.name}' ({meta.get('ip_address', 'Unassigned')}) "
+            f"is provisioned in Resource Group '{meta.get('resource_group', '')}' but is unassociated with any NIC or Virtual Machine. "
+            f"Azure assesses a continuous reservation fee of ~$0.005/hour for idle public IPv4 addresses."
+        )
+        blast_radius = (
+            "Risk of inaction: Incurs unnecessary monthly cloud charges against your Azure subscription credit. "
+            "Remediation impact: Deletes the public IP address resource from Azure Resource Manager. Zero downtime to running workloads."
+        )
+        uncertainty.extend([
+            "Once released, this specific public IPv4 address is recycled into the Azure pool and cannot be re-reserved.",
+            "Confirm that no external DNS records, webhooks, or third-party allowlists point to this IP address."
+        ])
+    elif finding.operation == "azure:compute/disks/delete":
+        meta = getattr(finding, "metadata", None) or getattr(finding, "operationParams", None) or {}
+        disk_size = meta.get("disk_size_gb", 32)
+        sku = meta.get("sku", "Standard_LRS")
+        root_cause = (
+            f"Azure Managed Disk '{finding.resource.name}' ({disk_size} GB, {sku}) is currently in 'Unattached' state. "
+            f"Azure charges storage rates for all provisioned managed disks regardless of whether a virtual machine is attached or powered off."
+        )
+        blast_radius = (
+            "Risk of inaction: Monthly storage waste ($0.04 - $0.135/GB/month depending on disk tier). "
+            "Remediation impact: Deletes the managed disk resource permanently from Azure. Irreversible without an Azure Disk Snapshot."
+        )
+        uncertainty.extend([
+            "Ensure no historical application state, configuration files, or database logs needed for compliance reside on this disk.",
+            "Create an Azure disk snapshot before initiating deletion if data retention is required."
+        ])
+    elif finding.operation == "azure:storage/storageAccounts/patch":
+        meta = getattr(finding, "metadata", None) or getattr(finding, "operationParams", None) or {}
+        root_cause = (
+            f"Azure Storage Account '{finding.resource.name}' has 'allowBlobPublicAccess: true'. "
+            f"This setting overrides container-level security and enables anonymous unauthenticated internet users to download blobs if container ACLs are misconfigured."
+        )
+        blast_radius = (
+            "Risk of inaction: Critical risk of data exfiltration and public disclosure of sensitive files or backups. "
+            "Remediation impact: Updates storage account ARM property 'allowBlobPublicAccess' to false. "
+            "Authorized Entra ID (Azure AD), Managed Identity, and Shared Access Signature (SAS) token requests are unaffected."
+        )
+        uncertainty.extend([
+            "If this storage account hosts public static assets (e.g. public website images, client downloads), anonymous users will receive HTTP 403 Forbidden.",
+            f"Rollback: az storage account update -g {meta.get('resource_group', '<rg>')} -n {finding.resource.name} --allow-blob-public-access true"
+        ])
     else:
         root_cause = f"Resource '{finding.resource.id}' violates cloud governance rule '{finding.rule}'."
         blast_radius = "Review finding evidence and resource tags prior to taking remediation action."
         uncertainty.append("Non-standard resource type: automated verification is limited.")
 
-    # Always document mode provenance
-    provenance = "Live AWS API Telemetry" if finding.execution_mode == "live" else "Simulated Demo Telemetry"
+    # Always document mode provenance accurately for AWS vs Azure
+    is_azure = finding.operation.startswith("azure:") or (finding.resource.id and finding.resource.id.startswith("/subscriptions/"))
+    if is_azure:
+        provenance = "Live Azure Resource Manager (ARM) Telemetry" if finding.execution_mode == "live" else "Simulated Azure Telemetry"
+    else:
+        provenance = "Live AWS API Telemetry" if finding.execution_mode == "live" else "Simulated Demo Telemetry"
 
     return FindingAIExplanation(
         finding_id=finding.id,

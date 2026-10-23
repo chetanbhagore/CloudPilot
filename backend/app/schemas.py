@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 
 # ─── Execution Modes & Status Types ─────────────────────────────────────────────
 ExecutionMode = Literal["demo", "live"]
-DataSource = Literal["live_aws", "demo_fixture"]
+DataSource = Literal["live_aws", "live_azure", "demo_fixture"]
 ScanStatus = Literal["idle", "scanning", "completed", "failed", "empty", "partial"]
 ConnectionStatus = Literal["disconnected", "connecting", "connected", "failed"]
+CloudProvider = Literal["aws", "azure"]
 
 # ─── Health & System Schemas ───────────────────────────────────────────────────
 class HealthResponse(BaseModel):
@@ -17,13 +18,18 @@ class HealthResponse(BaseModel):
 
 # ─── Account Connection Schemas ────────────────────────────────────────────────
 class AccountConnectRequest(BaseModel):
-    account_id: str = Field(..., description="12-digit AWS Account ID")
-    role_arn: str = Field(..., description="Full ARN of CloudPilotAuditRole")
-    external_id: str = Field(..., description="Unique tenant ExternalId condition")
-    region: str = Field(default="ap-south-1", description="AWS Primary Region")
+    account_id: Optional[str] = Field(default="", description="12-digit AWS Account ID or Azure Subscription ID")
+    role_arn: Optional[str] = Field(default="", description="Full ARN of CloudPilotAuditRole (AWS)")
+    external_id: Optional[str] = Field(default="", description="Unique tenant ExternalId condition (AWS)")
+    region: str = Field(default="ap-south-1", description="AWS/Azure Primary Region")
     mode: ExecutionMode = Field(default="live", description="Explicit execution mode ('live' or 'demo')")
-    connection_type: Optional[str] = Field(default="role_arn", description="Connection type: 'role_arn' | 'localstack' | 'profile'")
-    endpoint_url: Optional[str] = Field(default=None, description="Custom endpoint URL for LocalStack (e.g. http://localhost:4566)")
+    connection_type: Optional[str] = Field(default="role_arn", description="Connection type: 'role_arn' | 'localstack' | 'azure_sp'")
+    endpoint_url: Optional[str] = Field(default=None, description="Custom endpoint URL for LocalStack")
+    cloud_provider: str = Field(default="aws", description="Cloud provider ('aws' or 'azure')")
+    azure_tenant_id: Optional[str] = Field(default=None, description="Microsoft Entra Directory (tenant) ID")
+    azure_client_id: Optional[str] = Field(default=None, description="Azure App Registration (client) ID")
+    azure_client_secret: Optional[str] = Field(default=None, description="Azure Service Principal Client Secret")
+    azure_subscription_id: Optional[str] = Field(default=None, description="Target Azure Subscription ID")
 
 class AccountConnectResponse(BaseModel):
     success: bool
@@ -31,6 +37,7 @@ class AccountConnectResponse(BaseModel):
     alias: str
     region: str
     role_arn: str
+    cloud_provider: str = "aws"
     assumed_role_user_arn: Optional[str] = None
     session_expiration: Optional[str] = None
     is_live: bool = True
@@ -125,6 +132,7 @@ class FindingModel(BaseModel):
     telemetryMetricName: str = "Volume Utilization"
     telemetryUnit: str = "IOPS"
     telemetryData: List[TelemetryPoint] = []
+    metadata: Optional[Dict[str, Any]] = None
     
     # ── Strict Provenance & Mode Isolation ──
     execution_mode: ExecutionMode = "live"
@@ -142,6 +150,7 @@ class DiscoveryRequest(BaseModel):
     regions: Optional[List[str]] = None
     mode: ExecutionMode = Field(default="live", description="Explicit execution mode ('live' or 'demo')")
     organization_id: Optional[str] = "org-acme-prod"
+    cloud_provider: str = Field(default="aws", description="Cloud provider ('aws' or 'azure')")
 
 class DiscoveryResponse(BaseModel):
     success: bool
@@ -150,6 +159,7 @@ class DiscoveryResponse(BaseModel):
     scanned_at: str
     resource_count: int
     findings: List[FindingModel]
+    cloud_provider: str = "aws"
     execution_mode: ExecutionMode = "live"
     scan_status: ScanStatus = "completed"
     error_message: Optional[str] = None

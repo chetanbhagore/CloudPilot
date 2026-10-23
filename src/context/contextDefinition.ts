@@ -20,8 +20,13 @@ export interface AccountConfig {
   connectionError: string | null;
   externalId?: string;
   isLive?: boolean;
-  connectionType?: 'role_arn' | 'localstack';
+  cloudProvider?: 'aws' | 'azure';
+  connectionType?: 'role_arn' | 'localstack' | 'azure_sp';
   endpointUrl?: string;
+  azureTenantId?: string;
+  azureClientId?: string;
+  azureClientSecret?: string;
+  azureSubscriptionId?: string;
 }
 
 export interface DemoContextType {

@@ -48,6 +48,75 @@ def connect_account(
     else:
         org_id = "org-demo-simulated" if request.mode == "demo" else "org-acme-prod"
 
+    # ── Microsoft Azure Cloud Handling ──
+    if request.cloud_provider == "azure":
+        sub_id = (request.azure_subscription_id or request.account_id or "").strip()
+        tenant_id = (request.azure_tenant_id or "").strip()
+        client_id = (request.azure_client_id or "").strip()
+        client_secret = (request.azure_client_secret or "").strip()
+
+        if not sub_id or not tenant_id or not client_id or not client_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="Azure connection requires Subscription ID, Tenant ID, Client ID, and Client Secret."
+            )
+
+        from app.services.azure_auth import connect_azure_account, AzureAuthError
+        try:
+            azure_res = connect_azure_account(
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                subscription_id=sub_id
+            )
+        except AzureAuthError as e:
+            logger.error(f"[Accounts] Azure connection failed: {e}")
+            raise HTTPException(status_code=403, detail=f"Azure connection failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"[Accounts] Unexpected Azure connection error: {e}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error connecting to Azure: {str(e)}")
+
+        account_info = {
+            "account_id": sub_id,
+            "alias": azure_res["display_name"],
+            "region": request.region,
+            "role_arn": f"azure://subscriptions/{sub_id}",
+            "external_id": tenant_id,
+            "cloud_provider": "azure",
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "assumed_role_user_arn": f"sp://{client_id}@{tenant_id}",
+            "session_expiration": (datetime.now(timezone.utc)).isoformat(),
+            "is_live": True,
+            "execution_mode": "live",
+            "connection_status": "connected",
+            "connected_at": datetime.now(timezone.utc).isoformat()
+        }
+        _connected_accounts[f"azure:{sub_id}"] = account_info
+        _connected_accounts[f"live:{sub_id}"] = account_info
+        _connected_accounts[f"{org_id}:{sub_id}"] = account_info
+
+        try:
+            AccountRepository.save_account(org_id, account_info)
+        except Exception as e:
+            logger.warning(f"[DB] Non-fatal save error: {e}")
+
+        return AccountConnectResponse(
+            success=True,
+            account_id=sub_id,
+            alias=azure_res["display_name"],
+            region=request.region,
+            role_arn=f"azure://subscriptions/{sub_id}",
+            cloud_provider="azure",
+            assumed_role_user_arn=account_info["assumed_role_user_arn"],
+            session_expiration=account_info["session_expiration"],
+            is_live=True,
+            execution_mode="live",
+            connection_status="connected",
+            message=f"Successfully connected to Azure subscription '{azure_res['display_name']}' via Service Principal."
+        )
+
     sanitized_id = request.account_id.replace("-", "").strip()
     if len(sanitized_id) != 12 or not sanitized_id.isdigit():
         raise HTTPException(

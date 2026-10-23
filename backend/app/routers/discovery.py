@@ -105,11 +105,33 @@ def run_discovery_scan(
 
     _active_scans.add(lock_key)
     try:
-        if account_info.get("is_localstack"):
+        is_azure = (account_info.get("cloud_provider") == "azure" or getattr(request, "cloud_provider", None) == "azure")
+        if is_azure:
+            from app.services.azure_auth import get_azure_oauth_token
+            from app.services.azure_discovery import scan_azure_subscription_live
+
+            token = get_azure_oauth_token(
+                tenant_id=account_info["tenant_id"],
+                client_id=account_info["client_id"],
+                client_secret=account_info["client_secret"]
+            )
+            discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_azure_subscription_live(
+                subscription_id=sanitized_id,
+                access_token=token,
+                scan_id=scan_id
+            )
+        elif account_info.get("is_localstack"):
             credentials = connect_localstack(
                 account_id=sanitized_id,
                 endpoint_url=account_info.get("endpoint_url", "http://localhost:4566"),
                 region=request.region
+            )
+            discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_account_live(
+                account_id=sanitized_id,
+                region=request.region,
+                credentials=credentials,
+                regions=target_regions,
+                scan_id=scan_id
             )
         else:
             credentials = assume_role(
@@ -120,13 +142,13 @@ def run_discovery_scan(
                 expected_account_id=sanitized_id
             )
 
-        discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_account_live(
-            account_id=sanitized_id,
-            region=request.region,
-            credentials=credentials,
-            regions=target_regions,
-            scan_id=scan_id
-        )
+            discovered_findings, scanned_count, successful_regions, failed_regions, errors = scan_account_live(
+                account_id=sanitized_id,
+                region=request.region,
+                credentials=credentials,
+                regions=target_regions,
+                scan_id=scan_id
+            )
 
         # Store discovered findings in cache
         for f in discovered_findings:
@@ -160,6 +182,7 @@ def run_discovery_scan(
             scanned_at=datetime.now(timezone.utc).isoformat(),
             resource_count=scanned_count,
             findings=discovered_findings,
+            cloud_provider="azure" if is_azure else "aws",
             execution_mode="live",
             scan_status=scan_status,
             scanned_regions=successful_regions,

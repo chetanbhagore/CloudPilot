@@ -45,6 +45,7 @@ class RemediationExecutionRecord(BaseModel):
     before_state: Optional[str] = None
     after_state: Optional[str] = None
     verification_evidence: List[str] = []
+    verification_status: Optional[str] = "verified"
     rollback_guidance: Optional[str] = None
 
 class RemediationActionDefinition(BaseModel):
@@ -121,6 +122,54 @@ action_registry.register(
         description="Creates a safety snapshot backup of an EBS volume before lifecycle modification."
     )
 )
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="azure:network/networkSecurityGroups/securityRules/delete",
+        resource_type="Microsoft.Network/networkSecurityGroups",
+        required_permissions=[
+            "Microsoft.Network/networkSecurityGroups/securityRules/delete"
+        ],
+        risk_level="low",
+        is_reversible=True,
+        description="Deletes an open inbound SSH (port 22) or RDP (port 3389) rule from an Azure NSG."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="azure:network/publicIPAddresses/delete",
+        resource_type="Microsoft.Network/publicIPAddresses",
+        required_permissions=[
+            "Microsoft.Network/publicIPAddresses/delete"
+        ],
+        risk_level="low",
+        is_reversible=False,
+        description="Deletes an unassociated Azure Public IP address to eliminate idle IPv4 tariffs."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="azure:storage/storageAccounts/patch",
+        resource_type="Microsoft.Storage/storageAccounts",
+        required_permissions=[
+            "Microsoft.Storage/storageAccounts/write"
+        ],
+        risk_level="low",
+        is_reversible=True,
+        description="Disables anonymous public blob access on a target Azure Storage Account."
+    )
+)
+action_registry.register(
+    RemediationActionDefinition(
+        action_type="azure:compute/disks/createSnapshot",
+        resource_type="Microsoft.Compute/disks",
+        required_permissions=[
+            "Microsoft.Compute/snapshots/write"
+        ],
+        risk_level="low",
+        is_reversible=True,
+        description="Creates a safety snapshot backup of an Azure Managed Disk before removal."
+    )
+)
 
 SG_ID_REGEX = re.compile(r"^sg-[0-9a-fA-F]{8,17}$")
 
@@ -162,6 +211,21 @@ def validate_action_parameters(action_type: str, resource_id: str, params: Dict[
         vol_id = params.get("VolumeId") or resource_id
         if not vol_id or not str(vol_id).startswith("vol-"):
             raise ValueError(f"Invalid VolumeId '{vol_id}'. Expected format: vol-xxxxxxxx.")
+
+    elif action_type == "azure:network/networkSecurityGroups/securityRules/delete":
+        rule = params.get("rule_name")
+        if not rule:
+            raise ValueError("Parameter 'rule_name' is required for Azure NSG rule deletion.")
+
+    elif action_type == "azure:network/publicIPAddresses/delete":
+        pip = params.get("pip_id") or resource_id
+        if not pip or "publicIPAddresses" not in str(pip):
+            raise ValueError(f"Invalid Azure Public IP ID '{pip}'.")
+
+    elif action_type == "azure:storage/storageAccounts/patch":
+        sa = params.get("storage_id") or resource_id
+        if not sa or "storageAccounts" not in str(sa):
+            raise ValueError(f"Invalid Azure Storage Account ID '{sa}'.")
 
 # In-memory execution store and idempotency cache
 _execution_records: Dict[str, RemediationExecutionRecord] = {}
@@ -228,6 +292,20 @@ def execute_live_remediation(
 
     # ── 2. Parameter Validation ──
     validate_action_parameters(action_type, resource_id, parameters)
+
+    # ── Azure Multi-Cloud Dispatch ──
+    if action_type.startswith("azure:"):
+        from app.services.azure_remediation import execute_azure_live_remediation
+        return execute_azure_live_remediation(
+            subscription_id=account_id,
+            resource_id=resource_id,
+            action_type=action_type,
+            parameters=parameters,
+            credentials=credentials,
+            idempotency_key=idempotency_key,
+            actor_email=actor_email,
+            finding_id=finding_id
+        )
 
     exec_id = f"exec-{uuid.uuid4().hex[:10]}"
     now_iso = datetime.now(timezone.utc).isoformat()
