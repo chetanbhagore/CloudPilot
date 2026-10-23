@@ -47,7 +47,14 @@ export default function Discover() {
   const handleRunScan = async () => {
     sound.playClick();
     setIsScanning(true);
-    setScanMessage(`Querying AWS APIs via STS AssumeRole in ${accountConfig.region}...`);
+    const isAzure = accountConfig.cloudProvider === 'azure';
+    const isKeys = accountConfig.connectionType === 'access_keys';
+    const providerMsg = isAzure
+      ? `Querying Azure ARM REST APIs (NSGs, Disks, Storage) in ${accountConfig.region || 'eastus'}...`
+      : isKeys
+        ? `Querying AWS APIs via IAM Access Keys in ${accountConfig.region}...`
+        : `Querying AWS APIs via STS AssumeRole in ${accountConfig.region}...`;
+    setScanMessage(providerMsg);
     const scanRes = await scanLiveAWS();
     if (scanRes.success) {
       sound.playSuccess();
@@ -140,16 +147,18 @@ export default function Discover() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span className="badge badge-info">STAGE 2 OF 5</span>
             <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-              {accountConfig.isConnected ? `AWS Account: ${accountConfig.accountId} (${accountConfig.region})` : 'No AWS Account Connected'}
+              {accountConfig.isConnected 
+                ? `${accountConfig.cloudProvider === 'azure' ? 'Azure Subscription' : 'AWS Account'}: ${accountConfig.accountId} (${accountConfig.region})` 
+                : 'No Cloud Account Connected'}
             </span>
           </div>
           <h1 className="display-title" style={{ marginBottom: 6 }}>
-            Live AWS Investigation Workspace
+            {accountConfig.cloudProvider === 'azure' ? 'Live Azure Investigation Workspace' : 'Live Cloud Investigation Workspace'}
           </h1>
           <p className="body-lead">
             {accountConfig.isConnected
-              ? `${findings.length} live findings queried from active AWS resources. Click any card to inspect evidence and review the pre-generated Safety Passport.`
-              : 'Connect your AWS account via cross-account IAM Role to inspect live EC2 instances, EBS volumes, and security groups.'}
+              ? `${findings.length} live findings queried from active ${accountConfig.cloudProvider === 'azure' ? 'Azure' : 'AWS'} cloud resources. Click any card to inspect evidence and review the pre-generated Safety Passport.`
+              : 'Connect your cloud account via cross-account IAM Role, Direct Access Keys, or Azure Service Principal to inspect live infrastructure.'}
           </p>
         </div>
 
@@ -158,10 +167,10 @@ export default function Discover() {
             onClick={handleRunScan}
             disabled={isScanning || !isBackendOnline}
             className="btn btn-secondary"
-            title="Scan live AWS resources via STS AssumeRole"
+            title={`Scan live ${accountConfig.cloudProvider === 'azure' ? 'Azure' : 'AWS'} resources`}
           >
             <RefreshCw size={14} className={isScanning ? 'spin' : ''} />
-            <span>{isScanning ? 'Querying AWS APIs…' : 'Trigger Live AWS Scan'}</span>
+            <span>{isScanning ? 'Querying Cloud APIs…' : `Trigger Live ${accountConfig.cloudProvider === 'azure' ? 'Azure' : 'AWS'} Scan`}</span>
           </button>
         ) : (
           <button
@@ -172,7 +181,7 @@ export default function Discover() {
             className="btn btn-primary"
           >
             <Zap size={14} />
-            <span>Connect Real AWS Account</span>
+            <span>Connect Real Cloud Account</span>
           </button>
         )}
       </div>
@@ -196,21 +205,21 @@ export default function Discover() {
           <Zap size={16} color="var(--apple-blue)" fill="currentColor" />
           <div style={{ fontSize: 13, fontWeight: 600, color: accountConfig.isConnected ? 'var(--apple-blue)' : 'var(--text-primary)' }}>
             {accountConfig.isConnected
-              ? `LIVE AWS MODE — Scoped read-only telemetry queried via STS AssumeRole (acct-${accountConfig.accountId})`
-              : 'LIVE AWS MODE — Ready to connect target AWS account'}
+              ? `LIVE ${accountConfig.cloudProvider === 'azure' ? 'AZURE' : 'AWS'} MODE — Telemetry queried via ${accountConfig.cloudProvider === 'azure' ? 'Azure Service Principal' : accountConfig.connectionType === 'access_keys' ? 'IAM Access Keys' : 'STS AssumeRole'} (${accountConfig.accountId})`
+              : 'LIVE CLOUD MODE — Ready to connect target AWS or Azure account'}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
           {accountConfig.isConnected ? (
             <span>
-              Role: <code style={{ fontFamily: 'var(--font-mono)' }}>{accountConfig.roleName}</code>
+              {accountConfig.cloudProvider === 'azure' ? 'ServicePrincipal' : `Role: ${accountConfig.roleName}`}
               {` • Region: ${accountConfig.region}`}
               {` • Status: ${liveConnectionStatus.toUpperCase()}`}
               {isBackendOnline ? ' • Backend API: Online' : ' • Backend API: Offline'}
             </span>
           ) : (
-            <span>Status: {liveConnectionStatus.toUpperCase()} • Zero static AWS keys stored • Cryptographic ExternalId verified</span>
+            <span>Status: {liveConnectionStatus.toUpperCase()} • Zero static unencrypted keys stored • Cryptographic ExternalId verified</span>
           )}
         </div>
       </div>

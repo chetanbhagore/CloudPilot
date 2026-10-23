@@ -91,6 +91,11 @@ def run_discovery_scan(
     if not account_info:
         db_accounts = AccountRepository.get_accounts(org_id, mode="live")
         account_info = next((a for a in db_accounts if a["account_id"].replace("-", "") == sanitized_id), None)
+        if account_info:
+            _connected_accounts[f"{org_id}:{sanitized_id}"] = account_info
+            _connected_accounts[f"live:{sanitized_id}"] = account_info
+            if account_info.get("cloud_provider") == "azure":
+                _connected_accounts[f"azure:{sanitized_id}"] = account_info
 
     if not account_info:
         raise HTTPException(

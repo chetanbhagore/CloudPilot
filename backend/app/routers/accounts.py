@@ -346,12 +346,19 @@ def list_accounts(
         results = []
         for acc in db_accounts:
             k = f"{acc.get('execution_mode', 'live')}:{acc['account_id']}"
+            provider = acc.get("cloud_provider") or "aws"
+            default_alias = f"Azure Live ({acc['region']})" if provider == "azure" else f"AWS Live ({acc['region']})"
             acc_dict = {
                 "account_id": acc["account_id"],
-                "alias": acc.get("alias") or f"AWS Live ({acc['region']})",
+                "alias": acc.get("alias") or default_alias,
                 "region": acc["region"],
                 "role_arn": acc["role_arn"],
                 "external_id": acc["external_id"],
+                "cloud_provider": provider,
+                "connection_type": acc.get("connection_type", "role_arn"),
+                "tenant_id": acc.get("tenant_id"),
+                "client_id": acc.get("client_id"),
+                "client_secret": acc.get("client_secret"),
                 "assumed_role_user_arn": acc.get("assumed_role_user_arn"),
                 "session_expiration": acc.get("session_expiration"),
                 "is_live": acc.get("execution_mode") == "live",
@@ -361,6 +368,8 @@ def list_accounts(
             }
             _connected_accounts[k] = acc_dict
             _connected_accounts[f"{org_id}:{acc['account_id']}"] = acc_dict
+            if provider == "azure":
+                _connected_accounts[f"azure:{acc['account_id']}"] = acc_dict
             results.append(acc_dict)
         return results
     except Exception as e:
@@ -420,6 +429,13 @@ def disconnect_account(
         acc_org = _connected_accounts[key_mode].get("organization_id", "org-acme-prod")
         if user is None or acc_org == org_id:
             del _connected_accounts[key_mode]
+            deleted = True
+
+    key_azure = f"azure:{sanitized_id}"
+    if key_azure in _connected_accounts:
+        acc_org = _connected_accounts[key_azure].get("organization_id", "org-acme-prod")
+        if user is None or acc_org == org_id:
+            del _connected_accounts[key_azure]
             deleted = True
 
     if deleted:

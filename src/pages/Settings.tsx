@@ -400,10 +400,10 @@ export default function Settings() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
-                  Connected AWS Accounts ({accountConfig.isConnected ? '1 Active' : '0 Connected'})
+                  Connected Cloud Accounts ({accountConfig.isConnected ? '1 Active' : '0 Connected'})
                 </h3>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  CloudPilot establishes least-privilege access using our Two-Role IAM architecture via CloudFormation stacks.
+                  CloudPilot establishes least-privilege access using cross-account IAM roles, Azure Service Principals, or Direct Access Keys.
                 </p>
               </div>
               <button
@@ -414,7 +414,7 @@ export default function Settings() {
                 className="btn btn-primary btn-sm"
               >
                 <Plus size={14} />
-                <span>Connect AWS Account</span>
+                <span>Connect Cloud Account</span>
               </button>
             </div>
 
@@ -423,20 +423,26 @@ export default function Settings() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--apple-emerald)' }} />
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{accountConfig.alias || `AWS Account ${accountConfig.accountId}`}</span>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>
+                      {accountConfig.alias || (accountConfig.cloudProvider === 'azure' ? `Azure Subscription ${accountConfig.accountId}` : `AWS Account ${accountConfig.accountId}`)}
+                    </span>
                   </div>
                   <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 9999, background: 'var(--apple-emerald-light)', color: 'var(--apple-emerald-dark)', fontWeight: 700 }}>
-                    STS CONNECTED
+                    {accountConfig.cloudProvider === 'azure' ? 'AZURE ARM CONNECTED' : accountConfig.connectionType === 'access_keys' ? 'IAM KEYS CONNECTED' : 'STS CONNECTED'}
                   </span>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  AWS Account ID: {accountConfig.accountId}
+                  {accountConfig.cloudProvider === 'azure' ? 'Subscription ID: ' : 'Account ID: '}{accountConfig.accountId}
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
                   Target Region: <strong>{accountConfig.region}</strong>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 10 }}>
-                  Assumed Role: <code>arn:aws:iam::{accountConfig.accountId}:role/{accountConfig.roleName}</code>
+                  {accountConfig.cloudProvider === 'azure'
+                    ? <span>Service Principal: <code>sp://{accountConfig.azureClientId || 'client'}@{accountConfig.azureTenantId || 'tenant'}</code></span>
+                    : accountConfig.connectionType === 'access_keys'
+                      ? <span>IAM Direct Access: <code>{accountConfig.roleName || accountConfig.awsAccessKeyId}</code></span>
+                      : <span>Assumed Role: <code>arn:aws:iam::{accountConfig.accountId}:role/{accountConfig.roleName}</code></span>}
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
                   <button

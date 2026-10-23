@@ -128,7 +128,13 @@ export default function Connect() {
     } else {
       sound.playSuccess();
       setConnectionSuccess(true);
-      setValidationSuccessMsg(`Successfully validated STS AssumeRole session for acct-${accountConfig.accountId}.`);
+      const targetId = accountConfig.azureSubscriptionId || accountConfig.accountId || 'account';
+      const successMsg = accountConfig.cloudProvider === 'azure'
+        ? `Successfully connected and verified Azure Subscription (${targetId}).`
+        : accountConfig.connectionType === 'access_keys'
+          ? `Successfully verified AWS IAM Access Keys via sts:GetCallerIdentity.`
+          : `Successfully validated STS AssumeRole session for acct-${targetId}.`;
+      setValidationSuccessMsg(successMsg);
       setTimeout(() => {
         navigate('/discover');
       }, 1500);
