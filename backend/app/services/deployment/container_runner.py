@@ -28,47 +28,111 @@ logger = logging.getLogger("cloudpilot.container_runner")
 
 
 class ContainerRuntimeEngine:
-    @staticmethod
-    def check_docker_runtime() -> Dict[str, Any]:
+    @classmethod
+    def resolve_docker_binary(cls) -> Optional[str]:
+        """Resolves the docker executable across system PATH and well-known Windows locations."""
+        # 1. Standard PATH lookup
+        found = shutil.which("docker")
+        if found:
+            return found
+
+        # 2. Windows-specific standard Docker Desktop paths
+        if os.name == "nt":
+            standard_paths = [
+                r"C:\Program Files\Docker\Docker\resources\bin\docker.exe",
+                r"C:\ProgramData\DockerDesktop\version-bin\docker.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Docker\resources\bin\docker.exe"),
+                os.path.expandvars(r"%PROGRAMFILES%\Docker\Docker\resources\bin\docker.exe"),
+            ]
+            for p in standard_paths:
+                if os.path.isfile(p):
+                    # Also append directory to os.environ["PATH"] so subsequent subprocess calls can use "docker"
+                    dir_name = os.path.dirname(p)
+                    if dir_name not in os.environ.get("PATH", ""):
+                        os.environ["PATH"] = f"{dir_name};{os.environ.get('PATH', '')}"
+                    return p
+
+            # 3. Dynamic Windows Registry check for refreshed PATH (in case Docker Desktop was just installed while process is running)
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment") as key:
+                    sys_path, _ = winreg.QueryValueEx(key, "Path")
+                    for part in sys_path.split(";"):
+                        candidate = os.path.join(part.strip(), "docker.exe")
+                        if os.path.isfile(candidate):
+                            os.environ["PATH"] = f"{part.strip()};{os.environ.get('PATH', '')}"
+                            return candidate
+            except Exception:
+                pass
+
+        return None
+
+    @classmethod
+    def check_docker_runtime(cls) -> Dict[str, Any]:
         """Checks if the Docker CLI is installed and the Docker daemon is responsive."""
-        docker_bin = shutil.which("docker")
+        docker_bin = cls.resolve_docker_binary()
         if not docker_bin:
             return {
                 "available": False,
+                "engine_state": "not_installed",
                 "reason": "Docker CLI binary not found in system PATH. Install Docker Desktop or Docker Engine.",
-                "binary": None
+                "guidance": "Install Docker Desktop for Windows (https://docs.docker.com/desktop/setup/install/windows-install/) and launch the application.",
+                "binary": None,
+                "version": None
             }
 
         try:
             res = subprocess.run(
-                ["docker", "info"],
+                [docker_bin, "info"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=3
+                timeout=4
             )
             if res.returncode == 0:
+                version_str = "Docker Engine"
+                try:
+                    v_res = subprocess.run([docker_bin, "--version"], stdout=subprocess.PIPE, text=True, timeout=2)
+                    if v_res.returncode == 0 and v_res.stdout.strip():
+                        version_str = v_res.stdout.strip()
+                except Exception:
+                    pass
+
                 return {
                     "available": True,
+                    "engine_state": "active",
                     "reason": "Docker daemon is active and responsive.",
-                    "binary": docker_bin
+                    "guidance": "Docker runtime is ready to build and run container workloads.",
+                    "binary": docker_bin,
+                    "version": version_str
                 }
+
+            # Daemon installed but not responding/started
             return {
                 "available": False,
+                "engine_state": "stopped",
                 "reason": f"Docker daemon is not responding: {res.stderr.strip()[:200]}",
-                "binary": docker_bin
+                "guidance": "Docker Desktop is installed but the Docker daemon is stopped. Please open Docker Desktop and wait for the engine to initialize.",
+                "binary": docker_bin,
+                "version": None
             }
         except subprocess.TimeoutExpired:
             return {
                 "available": False,
-                "reason": "Docker daemon ping timed out after 3 seconds.",
-                "binary": docker_bin
+                "engine_state": "stopped",
+                "reason": "Docker daemon ping timed out after 4 seconds.",
+                "guidance": "Docker Desktop engine is starting up or unresponsive. Ensure Docker Desktop is running.",
+                "binary": docker_bin,
+                "version": None
             }
         except Exception as e:
             return {
                 "available": False,
+                "engine_state": "error",
                 "reason": f"Failed to inspect Docker runtime: {str(e)}",
-                "binary": docker_bin
+                "guidance": "An error occurred while probing Docker daemon.",
+                "binary": docker_bin,
+                "version": None
             }
 
     @classmethod
@@ -116,6 +180,7 @@ class ContainerRuntimeEngine:
                 return blocked_record
 
             # Docker is real & available: execute build and run
+            docker_bin = docker_status.get("binary") or "docker"
             allocated_port = PortManager.find_available_port(preferred_port=preferred_port)
             build_dir = tempfile.mkdtemp(prefix=f"build_{app_name}_")
             try:
@@ -131,6 +196,19 @@ class ContainerRuntimeEngine:
                     text=True,
                     timeout=60
                 )
+                # Resilient branch fallback
+                if clone_proc.returncode != 0 and ("not found in upstream origin" in clone_proc.stderr or "Remote branch" in clone_proc.stderr):
+                    shutil.rmtree(build_dir, ignore_errors=True)
+                    build_dir = tempfile.mkdtemp(prefix=f"build_{app_name}_")
+                    fallback_cmd = ["git", "clone", "--depth", "1", "--", repo_url.strip(), build_dir]
+                    clone_proc = subprocess.run(
+                        fallback_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=60
+                    )
+
                 if clone_proc.returncode != 0:
                     err_msg = f"Git clone failed: {clone_proc.stderr[:400]}"
                     failed_rec = {
@@ -162,7 +240,7 @@ class ContainerRuntimeEngine:
                     f.write(dockerfile_content)
 
                 tag = f"cloudpilot/{app_name.lower().replace(' ', '-')}:{dep_id[-6:]}"
-                build_cmd = ["docker", "build", "-t", tag, "."]
+                build_cmd = [docker_bin, "build", "-t", tag, "."]
                 build_proc = subprocess.run(
                     build_cmd,
                     cwd=build_dir,
@@ -196,7 +274,7 @@ class ContainerRuntimeEngine:
                 # Run container
                 container_name = f"cp_{app_name}_{dep_id[-6:]}"
                 run_cmd = [
-                    "docker", "run", "-d",
+                    docker_bin, "run", "-d",
                     "--name", container_name,
                     "-p", f"{allocated_port}:{preferred_port or 8080}"
                 ]
@@ -362,8 +440,9 @@ class ContainerRuntimeEngine:
         if cid and dep.get("target") == "local":
             docker_status = cls.check_docker_runtime()
             if docker_status["available"]:
+                docker_bin = docker_status.get("binary") or "docker"
                 try:
-                    subprocess.run(["docker", "stop", cid], timeout=15)
+                    subprocess.run([docker_bin, "stop", cid], timeout=15)
                 except Exception as e:
                     logger.warning(f"Failed to stop docker container {cid}: {e}")
 

@@ -198,26 +198,62 @@ def scan_repository(
 
     # Git shallow clone into isolated temporary folder
     temp_dir = tempfile.mkdtemp(prefix="cloudpilot_repo_")
+    actual_branch = (payload.branch or "main").strip()
     try:
         cmd = ["git", "clone", "--depth", "1"]
         if payload.branch:
             cmd.extend(["-b", payload.branch.strip()])
         cmd.extend(["--", payload.repo_url.strip(), temp_dir])
 
-        subprocess.run(
+        proc = subprocess.run(
             cmd,
-            check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=30
         )
+
+        if proc.returncode != 0:
+            err_out = proc.stderr.decode("utf-8", errors="replace")
+            # If the user specified a branch that doesn't exist (e.g. master instead of main),
+            # gracefully fallback to the repository's default branch
+            if "not found in upstream origin" in err_out or "Remote branch" in err_out:
+                logger.info(f"[Deployments] Branch '{payload.branch}' not found in remote repo. Falling back to default branch.")
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                temp_dir = tempfile.mkdtemp(prefix="cloudpilot_repo_")
+                fallback_cmd = ["git", "clone", "--depth", "1", "--", payload.repo_url.strip(), temp_dir]
+                proc = subprocess.run(
+                    fallback_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30
+                )
+
+            if proc.returncode != 0:
+                final_err = proc.stderr.decode("utf-8", errors="replace")[:250]
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Git clone failed: {final_err}")
+
+        # Detect the actual checked out branch
+        try:
+            b_proc = subprocess.run(
+                ["git", "-C", temp_dir, "branch", "--show-current"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5
+            )
+            if b_proc.returncode == 0 and b_proc.stdout.strip():
+                actual_branch = b_proc.stdout.strip()
+        except Exception:
+            pass
+
         result = RepoScanner.scan_directory(temp_dir)
-        return {"status": "ok", "scan": result.to_dict()}
+        scan_dict = result.to_dict()
+        scan_dict["detected_branch"] = actual_branch
+        return {"status": "ok", "scan": scan_dict}
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail="Git clone operation timed out after 30 seconds.")
-    except subprocess.CalledProcessError as e:
-        err_out = e.stderr.decode("utf-8", errors="replace")[:200]
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Git clone failed: {err_out}")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to scan repository: {str(e)}")
     finally:

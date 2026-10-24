@@ -16,6 +16,16 @@ interface ScanData {
   default_port: number;
   entrypoint: string;
   detected_files: string[];
+  detected_branch?: string;
+}
+
+interface RuntimeStatus {
+  available: boolean;
+  engine_state: 'active' | 'stopped' | 'not_installed' | 'error';
+  reason: string;
+  guidance?: string;
+  binary?: string | null;
+  version?: string | null;
 }
 
 interface DeploymentRecord {
@@ -47,7 +57,7 @@ export default function DeployCenter() {
 
   // Input state
   const [repoUrl, setRepoUrl] = useState('https://github.com/fastapi/fastapi');
-  const [branch, setBranch] = useState('master');
+  const [branch, setBranch] = useState('main');
   const [appName, setAppName] = useState('cloudpilot-fastapi-service');
   const [target, setTarget] = useState<'local' | 'aws' | 'azure'>('local');
   const [preferredPort, setPreferredPort] = useState<number>(8000);
@@ -62,6 +72,8 @@ export default function DeployCenter() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [portStatus, setPortStatus] = useState<{ checked: boolean; inUse: boolean; port: number } | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
+  const [isCheckingRuntime, setIsCheckingRuntime] = useState(false);
 
   const getHeaders = useCallback(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('cloudpilot_jwt_token') : null;
@@ -69,6 +81,21 @@ export default function DeployCenter() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
   }, []);
+
+  const fetchRuntimeStatus = useCallback(async () => {
+    setIsCheckingRuntime(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/v1/workloads/runtime/status`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setRuntimeStatus(data.runtime);
+      }
+    } catch {
+      // Backend offline
+    } finally {
+      setIsCheckingRuntime(false);
+    }
+  }, [backendUrl, getHeaders]);
 
   const fetchDeployments = useCallback(async () => {
     try {
@@ -85,9 +112,14 @@ export default function DeployCenter() {
     }
   }, [backendUrl, getHeaders, activeDeployment]);
 
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchDeployments(), fetchRuntimeStatus()]);
+  }, [fetchDeployments, fetchRuntimeStatus]);
+
   useEffect(() => {
     fetchDeployments();
-  }, [fetchDeployments]);
+    fetchRuntimeStatus();
+  }, [fetchDeployments, fetchRuntimeStatus]);
 
   const handleScanAndSynthesize = async () => {
     sound.playClick();
@@ -105,12 +137,16 @@ export default function DeployCenter() {
 
       if (!scanRes.ok) {
         const err = await scanRes.json().catch(() => ({ detail: 'Failed to scan repository' }));
-        throw new Error(err.detail || `Scan failed with status ${scanRes.status}`);
+        const errMsg = err.message || err.detail || (err.error_code ? `${err.error_code}: ${err.message}` : null) || `Scan failed with status ${scanRes.status}`;
+        throw new Error(errMsg);
       }
 
       const scanData = await scanRes.json();
       const detected: ScanData = scanData.scan;
       setScanResult(detected);
+      if (detected.detected_branch && detected.detected_branch !== branch) {
+        setBranch(detected.detected_branch);
+      }
       setPreferredPort(detected.default_port || 8080);
 
       // 2. Synthesize Dockerfile
@@ -194,9 +230,10 @@ export default function DeployCenter() {
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.detail || 'Deployment initiation failed.');
+        const errMsg = data.message || data.detail || (data.error_code ? `${data.error_code}: ${data.message}` : null) || 'Deployment initiation failed.';
+        throw new Error(errMsg);
       }
 
       const rec: DeploymentRecord = data.deployment;
@@ -252,11 +289,12 @@ export default function DeployCenter() {
           </p>
         </div>
         <button
-          onClick={fetchDeployments}
+          onClick={refreshAll}
+          disabled={isCheckingRuntime}
           className="btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13 }}
         >
-          <RefreshCw size={14} /> Refresh Runtimes
+          <RefreshCw size={14} className={isCheckingRuntime ? 'spin' : ''} /> {isCheckingRuntime ? 'Checking...' : 'Refresh Runtimes'}
         </button>
       </div>
 
@@ -302,8 +340,20 @@ export default function DeployCenter() {
                   className="badge badge-outline"
                   style={{ cursor: 'pointer', padding: '4px 10px', fontSize: 12 }}
                   onClick={() => {
+                    setRepoUrl('https://github.com/chetanbhagore/calculator-app');
+                    setBranch('main');
+                    setAppName('calculator-app');
+                  }}
+                >
+                  🧮 Calculator App (Flask)
+                </button>
+                <button
+                  type="button"
+                  className="badge badge-outline"
+                  style={{ cursor: 'pointer', padding: '4px 10px', fontSize: 12 }}
+                  onClick={() => {
                     setRepoUrl('https://github.com/fastapi/fastapi');
-                    setBranch('master');
+                    setBranch('main');
                     setAppName('fastapi-microservice');
                   }}
                 >
@@ -554,6 +604,85 @@ export default function DeployCenter() {
                 <div style={{ fontSize: 11, color: '#86868B', marginTop: 2 }}>Container Apps Serverless</div>
               </button>
             </div>
+
+            {/* Target Diagnostic & Guidance Card */}
+            {target === 'local' && (
+              <div style={{
+                marginBottom: 18,
+                padding: '14px 16px',
+                borderRadius: 10,
+                border: runtimeStatus?.available ? '1px solid #BBF7D0' : runtimeStatus?.engine_state === 'stopped' ? '1px solid #FCD34D' : '1px solid #E2E8F0',
+                backgroundColor: runtimeStatus?.available ? '#F0FDF4' : runtimeStatus?.engine_state === 'stopped' ? '#FFFBEB' : '#F8FAFC',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🐳</span>
+                    <span style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: runtimeStatus?.available ? '#166534' : runtimeStatus?.engine_state === 'stopped' ? '#92400E' : '#334155'
+                    }}>
+                      {runtimeStatus?.available
+                        ? `Docker Desktop Online (${runtimeStatus.version || 'Engine Ready'})`
+                        : runtimeStatus?.engine_state === 'stopped'
+                        ? 'Docker Desktop Installed (Engine Stopped)'
+                        : 'Docker Desktop Not Detected on System'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchRuntimeStatus}
+                    disabled={isCheckingRuntime}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#0071E3',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <RefreshCw size={12} className={isCheckingRuntime ? 'spin' : ''} />
+                    {isCheckingRuntime ? 'Checking...' : 'Check Status'}
+                  </button>
+                </div>
+
+                <p style={{
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  margin: '4px 0 0 0',
+                  color: runtimeStatus?.available ? '#15803D' : runtimeStatus?.engine_state === 'stopped' ? '#B45309' : '#64748B'
+                }}>
+                  {runtimeStatus?.available
+                    ? `Local daemon responsive at ${runtimeStatus.binary || 'system PATH'}. Containers will be built with multi-stage non-root isolation and bound to your host port.`
+                    : runtimeStatus?.engine_state === 'stopped'
+                    ? `Docker CLI binary is located at ${runtimeStatus?.binary}. However, the Docker daemon is stopped. Please open Docker Desktop on Windows and wait for the whale icon to report "Engine running", then click "Check Status".`
+                    : 'Docker Desktop or Engine is not installed or not in PATH. To deploy locally on Windows, install Docker Desktop (WSL 2 backend). Alternatively, select AWS App Runner or Azure ACA above.'}
+                </p>
+
+                {!runtimeStatus?.available && (
+                  <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <a
+                      href="https://docs.docker.com/desktop/setup/install/windows-install/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="badge badge-blue"
+                      style={{ textDecoration: 'none', padding: '5px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <ExternalLink size={11} /> Install Docker Desktop for Windows ↗
+                    </a>
+                    {runtimeStatus?.engine_state === 'not_installed' && (
+                      <span style={{ fontSize: 11, color: '#86868B' }}>
+                        Free for personal and open-source use
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
               onClick={handleDeploy}

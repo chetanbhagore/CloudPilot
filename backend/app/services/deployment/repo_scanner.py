@@ -144,10 +144,19 @@ class RepoScanner:
                 except Exception:
                     pass
 
+        code_text = ""
+        for py_candidate in ["app.py", "main.py", "server.py", "wsgi.py", "run.py", "application.py"]:
+            candidate_file = path / py_candidate
+            if candidate_file.exists():
+                try:
+                    code_text += "\n" + candidate_file.read_text(encoding="utf-8", errors="ignore").lower()
+                except Exception:
+                    pass
+
         env_vars = cls._extract_env_vars(path)
 
         # Check Streamlit
-        if "streamlit" in deps_text:
+        if "streamlit" in deps_text or "streamlit" in code_text:
             entrypoint = "app.py"
             for candidate in ["app.py", "main.py", "streamlit_app.py"]:
                 if (path / candidate).exists():
@@ -167,7 +176,7 @@ class RepoScanner:
             )
 
         # Check Django
-        if "django" in deps_text or (path / "manage.py").exists():
+        if "django" in deps_text or (path / "manage.py").exists() or "django" in code_text:
             return ScanResult(
                 framework=FrameworkType.DJANGO,
                 language="python",
@@ -182,7 +191,7 @@ class RepoScanner:
             )
 
         # Check FastAPI
-        if "fastapi" in deps_text:
+        if "fastapi" in deps_text or "fastapi" in code_text:
             entrypoint = cls._find_fastapi_entrypoint(path)
             return ScanResult(
                 framework=FrameworkType.FASTAPI,
@@ -198,9 +207,9 @@ class RepoScanner:
             )
 
         # Check Flask
-        if "flask" in deps_text:
+        if "flask" in deps_text or "flask" in code_text:
             entrypoint = "app:app"
-            for candidate in ["app.py", "main.py", "wsgi.py"]:
+            for candidate in ["app.py", "main.py", "wsgi.py", "run.py", "application.py"]:
                 if (path / candidate).exists():
                     entrypoint = f"{candidate[:-3]}:app"
                     break
@@ -214,7 +223,7 @@ class RepoScanner:
                 env_vars=env_vars,
                 has_dockerfile=has_dockerfile,
                 confidence=0.92,
-                details={"run_command": f"flask run --host=0.0.0.0 --port=5000"},
+                details={"run_command": f"flask run --host=0.0.0.0 --port=5000", "source_inferred": "flask" in code_text and "flask" not in deps_text},
             )
 
         # Generic Python
